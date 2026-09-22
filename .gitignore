@@ -29,3 +29,9 @@ override.tf.json
 # Operating system files
 .DS_Store
 Thumbs.db
+
+# Secrets & Service Account Keys
+*-key.json
+*.pem
+.env
+.env.*

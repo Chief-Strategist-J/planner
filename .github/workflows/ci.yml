@@ -6,9 +6,12 @@ on:
   pull_request:
     branches: [ main ]
 
+permissions:
+  contents: read
+
 jobs:
-  test:
-    name: Run Test Suite
+  test-and-validate:
+    name: Test Go Backend & Validate Terraform
     runs-on: ubuntu-latest
 
     steps:
@@ -21,7 +24,18 @@ jobs:
           go-version: '1.23'
           cache-dependency-path: worker/go.sum
 
-      - name: Run Unit and Integration Tests
+      - name: Run Go Unit and Integration Tests
         run: |
           cd worker
           go test -count=1 -v ./...
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.16.3"
+
+      - name: Validate Terraform Configuration
+        run: |
+          cd infra/terraform
+          terraform init -backend=false
+          terraform validate

@@ -1,16 +1,23 @@
-name: Daily Task Reminder Sweep
+name: Daily Task Reminder & Scheduler Sweep
 
 on:
   schedule:
-    - cron: '0 9 * * *' # Executes daily at 09:00 UTC
-  workflow_dispatch:      # Allows manual trigger via GitHub Actions UI
+    # 09:00 AM IST (Indian Standard Time / Bengaluru) = 03:30 UTC
+    - cron: '30 3 * * *'
+  workflow_dispatch:
+    inputs:
+      trigger_cloud_run:
+        description: 'Also trigger live Cloud Run service endpoint'
+        required: true
+        type: boolean
+        default: true
 
 permissions:
   contents: read
 
 jobs:
-  sweep-and-notify:
-    name: Scan Pending Tasks & Dispatch Reminders
+  daily-reminder-sweep:
+    name: Scan Tasks & Dispatch Reminders
     runs-on: ubuntu-latest
 
     steps:
@@ -23,7 +30,29 @@ jobs:
           go-version: '1.23'
           cache-dependency-path: worker/go.sum
 
-      - name: Run Pending Tasks Sweep & Send Reminders
+      # 1. Trigger live Cloud Run service endpoint in asia-south1
+      - name: Trigger Live Cloud Run Scheduler Endpoint
+        if: ${{ github.event_name == 'schedule' || inputs.trigger_cloud_run == true }}
+        run: |
+          echo "### 🌐 Triggering Cloud Run Service (asia-south1)..."
+          HTTP_RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" -X POST "https://planner-service-715525810343.asia-south1.run.app/api/v1/scheduler/trigger" \
+            -H "Content-Type: application/json" \
+            -H "x-request-id: req-ci-daily-$(date +%s)")
+          
+          STATUS_CODE=$(echo "$HTTP_RESPONSE" | grep "HTTP_STATUS:" | cut -d':' -f2)
+          BODY=$(echo "$HTTP_RESPONSE" | sed '/HTTP_STATUS:/d')
+          
+          echo "Response Status: $STATUS_CODE"
+          echo "Response Body: $BODY"
+          
+          if [ "$STATUS_CODE" -eq 200 ]; then
+            echo "✅ Live Cloud Run scheduler trigger succeeded!"
+          else
+            echo "⚠️ Cloud Run trigger returned status $STATUS_CODE (continuing with local repository sweep)"
+          fi
+
+      # 2. Execute Go sweep engine to scan projects and dispatch reminder emails / step summary
+      - name: Execute Pending Tasks Sweep & Send Digest Emails
         env:
           EMAIL_MODE: ${{ secrets.SMTP_HOST != '' && 'smtp' || 'logger' }}
           SMTP_HOST: ${{ secrets.SMTP_HOST }}

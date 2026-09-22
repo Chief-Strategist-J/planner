@@ -1,0 +1,143 @@
+name: Cloud Run Working Hours Schedule (Auto Start / Stop)
+
+on:
+  schedule:
+    # 1. Start Service at 09:00 AM IST (03:30 UTC) - Monday to Friday
+    - cron: '30 3 * * 1-5'
+    # 2. Stop/Delete Service at 06:00 PM IST (12:30 UTC) - Monday to Friday
+    - cron: '30 12 * * 1-5'
+
+  # Manual On-Demand Trigger via GitHub Actions UI
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action to perform'
+        required: true
+        type: choice
+        options:
+          - 'START (Deploy Service)'
+          - 'STOP (Delete Service & Turn Off)'
+          - 'AUTO (Detect based on current time)'
+        default: 'START (Deploy Service)'
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  manage-service:
+    name: Manage Cloud Run Lifecycle
+    runs-on: ubuntu-latest
+
+    env:
+      PROJECT_ID: 'planner-app-66733'
+      REGION: 'asia-south1'
+      SERVICE_NAME: 'planner-service'
+      IMAGE_URI: 'asia-south1-docker.pkg.dev/planner-app-66733/planner-repo/planner-worker:v1'
+      SERVICE_ACCOUNT: 'planner-runner@planner-app-66733.iam.gserviceaccount.com'
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # Determine whether to START or STOP
+      - name: Determine Scheduled Action
+        id: determine_action
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            SELECTED_ACTION="${{ inputs.action }}"
+            if [[ "$SELECTED_ACTION" == *"START"* ]]; then
+              echo "action=START" >> $GITHUB_OUTPUT
+            elif [[ "$SELECTED_ACTION" == *"STOP"* ]]; then
+              echo "action=STOP" >> $GITHUB_OUTPUT
+            else
+              # Auto mode based on current UTC hour
+              CURRENT_HOUR=$(date -u +%H)
+              if [ "$CURRENT_HOUR" -lt 12 ]; then
+                echo "action=START" >> $GITHUB_OUTPUT
+              else
+                echo "action=STOP" >> $GITHUB_OUTPUT
+              fi
+            fi
+          else
+            # Cron trigger: 03:30 UTC = Morning (START), 12:30 UTC = Evening (STOP)
+            CURRENT_HOUR=$(date -u +%H)
+            if [ "$CURRENT_HOUR" -lt 10 ]; then
+              echo "action=START" >> $GITHUB_OUTPUT
+            else
+              echo "action=STOP" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+      # Authenticate to Google Cloud using GitHub Secret GCP_SA_KEY
+      - name: Authenticate to Google Cloud
+        if: env.GCP_SA_KEY != ''
+        env:
+          GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        if: env.GCP_SA_KEY != ''
+        env:
+          GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+        uses: google-github-actions/setup-gcloud@v2
+
+      # -----------------------------------------------------------------------
+      # ACTION: START (Deploy Cloud Run Service)
+      # -----------------------------------------------------------------------
+      - name: Start Cloud Run Service
+        if: steps.determine_action.outputs.action == 'START' && env.GCP_SA_KEY != ''
+        env:
+          GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+        run: |
+          echo "🚀 [STARTING] Deploying Cloud Run service in $REGION..."
+          gcloud run deploy "$SERVICE_NAME" \
+            --project="$PROJECT_ID" \
+            --image="$IMAGE_URI" \
+            --region="$REGION" \
+            --service-account="$SERVICE_ACCOUNT" \
+            --min-instances=0 \
+            --max-instances=1 \
+            --cpu=1 \
+            --memory=512Mi \
+            --concurrency=80 \
+            --cpu-throttling \
+            --allow-unauthenticated
+
+          SERVICE_URL=$(gcloud run services describe "$SERVICE_NAME" --project="$PROJECT_ID" --region="$REGION" --format="value(status.url)")
+          echo "✅ Service is LIVE at: $SERVICE_URL"
+          echo "### 🚀 Cloud Run Service Started" >> $GITHUB_STEP_SUMMARY
+          echo "- **URL:** $SERVICE_URL" >> $GITHUB_STEP_SUMMARY
+          echo "- **Region:** $REGION (Mumbai)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status:** Online & Serving Traffic" >> $GITHUB_STEP_SUMMARY
+
+      # -----------------------------------------------------------------------
+      # ACTION: STOP (Delete Cloud Run Service)
+      # -----------------------------------------------------------------------
+      - name: Stop Cloud Run Service
+        if: steps.determine_action.outputs.action == 'STOP' && env.GCP_SA_KEY != ''
+        env:
+          GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+        run: |
+          echo "🛑 [STOPPING] Deleting Cloud Run service to guarantee zero activity..."
+          gcloud run services delete "$SERVICE_NAME" \
+            --project="$PROJECT_ID" \
+            --region="$REGION" \
+            --quiet || true
+
+          echo "✅ Cloud Run service $SERVICE_NAME has been completely deleted/turned off."
+          echo "### 🛑 Cloud Run Service Stopped" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status:** Service Deleted / Offline" >> $GITHUB_STEP_SUMMARY
+          echo "- **Cost:** $0.00 (No running services)" >> $GITHUB_STEP_SUMMARY
+
+      # Fallback notice if GCP_SA_KEY secret is not set yet
+      - name: Check GCP Credentials Configuration
+        if: env.GCP_SA_KEY == ''
+        env:
+          GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+        run: |
+          echo "⚠️ [ACTION REQUIRED] Please add your GCP_SA_KEY secret to GitHub Repository Secrets to enable automated Start/Stop."
+          echo "### ⚠️ Missing GCP_SA_KEY Secret" >> $GITHUB_STEP_SUMMARY
+          echo "To enable automated turn-on/turn-off in GitHub Actions, please add the \`GCP_SA_KEY\` secret in your repository settings." >> $GITHUB_STEP_SUMMARY
