@@ -49,6 +49,8 @@ gcloud run deploy "${SERVICE_NAME}" \
   --image="${IMAGE_URI}" \
   --region="${REGION}" \
   --service-account="${SERVICE_ACCOUNT}" \
+  --add-volume=name=planner-data,type=cloud-storage,bucket="${PROJECT_ID}-data" \
+  --add-volume-mount=volume=planner-data,mount-path=/app/projects \
   --min-instances=0 \
   --max-instances=1 \
   --cpu=1 \
