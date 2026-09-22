@@ -238,7 +238,60 @@ To guarantee zero unexpected billing charges:
 
 ---
 
-## 5. Deployment & Test Validation Results
+## 5. Security Architecture, Least-Privilege IAM Policies & Restrictions
+
+To strictly enforce the **Principle of Least Privilege (PoLP)** and zero-trust security boundaries across Google Cloud and runtime containers, the following access control policies, IAM matrices, and execution restrictions are actively enforced:
+
+### 5.1 Identity Segregation Matrix
+
+| Principal / Identity | Scope | Assigned IAM Role | Allowed Capabilities | Strictly Denied Actions |
+|---|---|---|---|---|
+| **`planner-runner`** (Cloud Run Service Account) | Runtime Service Execution | `roles/logging.logWriter` | Write application logs to Cloud Logging | Cannot read logs, delete audit records, or view other services |
+| **`planner-runner`** (Cloud Run Service Account) | Observability Telemetry | `roles/monitoring.metricWriter` | Emit container & application runtime metrics | Cannot modify alerts, view billing data, or create dashboards |
+| **`planner-runner`** (Cloud Run Service Account) | Secrets Management | `roles/secretmanager.secretAccessor` | Read runtime configuration & SMTP credentials | Cannot create, update, list, delete secrets or alter secret IAM |
+| **Cloud Build Service Account** (`{proj_num}@cloudbuild...`) | CI/CD Image Build | `roles/artifactregistry.writer` | Push compiled container images to `planner-repo` | Cannot deploy to production, modify IAM, or read Secret Manager |
+| **Public Internet Invocations** (`allUsers`) | API Routing | `roles/run.invoker` | Send HTTP/HTTPS requests to public endpoints | No administrative access, no container shell access |
+| **Default Compute Engine SA** (`{proj_num}-compute@...`) | Unused Default | **Revoked / Unbound** | None (Default broad `Editor` role bypassed) | Complete exclusion from Cloud Run runtime execution |
+
+### 5.2 IAM Hardening Rules Enforced
+
+1. **Elimination of Broad Administrative Roles:**
+   * `roles/owner`, `roles/editor`, and generic `roles/resourcemanager.*` roles are **strictly prohibited** on all service accounts.
+   * Service accounts only possess point-in-time leaf-level capabilities (`.logWriter`, `.metricWriter`, `.secretAccessor`).
+2. **No Embedded Service Account Keys:**
+   * The application uses native Google Cloud Workload Identity / Metadata Server tokens at runtime.
+   * **Zero long-lived JSON service account keys (`*.json`)** are generated, downloaded, or stored in git.
+3. **Auditable IAM Changes:**
+   * All IAM policy assignments are codified in version-controlled infrastructure ([`infra/scripts/setup.sh`](file:///home/btpl-lap-22/live/planner/infra/scripts/setup.sh) and [`infra/terraform/main.tf`](file:///home/btpl-lap-22/live/planner/infra/terraform/main.tf)).
+
+### 5.3 Container & Runtime Sandboxing Restrictions
+
+1. **Multi-Stage Container Stripping:**
+   * The container is built using a multi-stage `Dockerfile`:
+     * Build Stage: `golang:1.23-alpine` (compiles static binary).
+     * Final Runtime Stage: `alpine:3.20` (only contains compiled binary, CA certs, and tzdata).
+   * **Compiler toolchains (`go`, `gcc`), package managers, and build artifacts are completely purged from the production image.**
+2. **Binary Hardening:**
+   * The Go binary is compiled with `CGO_ENABLED=0` and stripped linker flags (`-ldflags="-w -s"`), removing debug symbol tables and preventing C-library memory corruption vulnerabilities.
+3. **Restricted Ephemeral Filesystem:**
+   * File operations are locked exclusively to the isolated `/app/projects` path.
+   * Cloud Run provides an ephemeral root filesystem; containers cannot persist rogue files across restarts.
+4. **Single Ingress Port Exposure:**
+   * The container only opens and listens on `PORT=8080`. All other ports are closed.
+
+### 5.4 Network & Traffic Boundaries
+
+1. **Enforced TLS 1.3 Termination:**
+   * Google Front End terminates HTTPS at the edge using Google-managed certificates. Plain-text HTTP is automatically upgraded or rejected.
+2. **Denial-of-Service (DoS) and Burst Protection:**
+   * `concurrency = 80`: Maximum concurrent connections per container instance.
+   * `max_instances = 1`: Hard ceiling prevents autoscaling cost runaways or distributed amplification attacks.
+3. **Fast Access Revocation:**
+   * Public ingress can be revoked in sub-second time by removing the `roles/run.invoker` policy binding, immediately quarantining the service.
+
+---
+
+## 6. Deployment & Test Validation Results
 
 All API endpoints on the live service ([`https://planner-service-715525810343.asia-south1.run.app`](https://planner-service-715525810343.asia-south1.run.app)) have been executed and verified end-to-end:
 
@@ -260,7 +313,7 @@ All API endpoints on the live service ([`https://planner-service-715525810343.as
 
 ---
 
-## 6. Consequences & Operational Guidelines
+## 7. Consequences & Operational Guidelines
 
 ### Positive Consequences:
 * **Lowest Latency:** Mumbai (`asia-south1`) provides ~15–25ms network latency for Bengaluru clients.
