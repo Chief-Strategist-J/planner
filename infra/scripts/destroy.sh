@@ -1,9 +1,16 @@
 #!/usr/bin/env bash
+# ==============================================================================
+# TOP-LEVEL ALGORITHM BLUEPRINT: INFRASTRUCTURE TEARDOWN & CLEANUP
+# ==============================================================================
+# 1. Environment & Target Resolution:
+#    - Resolves target Project ID, region, Cloud Run service name, and artifact repository.
+# 2. Destructive Action Confirmation:
+#    - Prompts user for interactive confirmation before proceeding with deletion.
+# 3. Resource De-provisioning:
+#    - Deletes Cloud Run service instance.
+#    - Deletes Artifact Registry Docker repository and all stored container images.
+# ==============================================================================
 set -euo pipefail
-
-# ==============================================================================
-# destroy.sh - Clean up Cloud Run service and Artifact Registry resources
-# ==============================================================================
 
 PROJECT_ID="${PROJECT_ID:-planner-app-66733}"
 REGION="${REGION:-asia-south1}"
