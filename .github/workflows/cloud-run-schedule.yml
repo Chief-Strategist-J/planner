@@ -93,11 +93,18 @@ jobs:
           GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
         run: |
           echo "🚀 [STARTING] Deploying Cloud Run service in $REGION..."
+          
+          ENV_VARS="PROJECTS_DIR=/app/projects,CONFIG_PATH=/app/config/default.yaml"
+          if [ -n "${{ secrets.SMTP_HOST }}" ]; then
+            ENV_VARS="${ENV_VARS},EMAIL_MODE=smtp,SMTP_HOST=${{ secrets.SMTP_HOST }},SMTP_PORT=${{ secrets.SMTP_PORT || '587' }},SMTP_USERNAME=${{ secrets.SMTP_USERNAME }},SMTP_PASSWORD=${{ secrets.SMTP_PASSWORD }}"
+          fi
+
           gcloud run deploy "$SERVICE_NAME" \
             --project="$PROJECT_ID" \
             --image="$IMAGE_URI" \
             --region="$REGION" \
             --service-account="$SERVICE_ACCOUNT" \
+            --set-env-vars="$ENV_VARS" \
             --add-volume=name=planner-data,type=cloud-storage,bucket="${PROJECT_ID}-data" \
             --add-volume-mount=volume=planner-data,mount-path=/app/projects \
             --min-instances=0 \

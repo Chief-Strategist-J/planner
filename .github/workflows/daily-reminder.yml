@@ -5,69 +5,32 @@ on:
     # 10:00 AM IST (Indian Standard Time / Bengaluru) = 04:30 UTC
     - cron: '30 4 * * *'
   workflow_dispatch:
-    inputs:
-      trigger_cloud_run:
-        description: 'Also trigger live Cloud Run service endpoint'
-        required: true
-        type: boolean
-        default: true
 
 permissions:
   contents: read
-  id-token: write
 
 jobs:
   daily-reminder-sweep:
-    name: Scan Tasks & Dispatch Reminders
+    name: Trigger Cloud Scheduler & Generate Daily Digest
     runs-on: ubuntu-latest
 
     env:
-      PROJECT_ID: 'planner-app-66733'
-      BUCKET_NAME: 'planner-app-66733-data'
+      BASE_URL: 'https://planner-service-715525810343.asia-south1.run.app'
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.23'
-          cache-dependency-path: worker/go.sum
-
-      # 1. Authenticate to Google Cloud if secret is present
-      - name: Authenticate to Google Cloud
-        if: env.GCP_SA_KEY != ''
-        env:
-          GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
-        uses: google-github-actions/auth@v2
-        with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
-
-      - name: Set up Cloud SDK
-        if: env.GCP_SA_KEY != ''
-        env:
-          GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
-        uses: google-github-actions/setup-gcloud@v2
-
-      # 2. Sync latest persistent project & task YAML files from Google Cloud Storage
-      - name: Sync Tasks from Persistent GCS Bucket
-        if: env.GCP_SA_KEY != ''
-        env:
-          GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+      # 1. Trigger Live Cloud Run Sweep via REST API
+      - name: Trigger Live Cloud Run Sweep Engine
+        id: trigger_sweep
         run: |
-          echo "📥 Syncing latest tasks from gs://$BUCKET_NAME to worker/projects/..."
-          mkdir -p worker/projects
-          gcloud storage cp -r "gs://${BUCKET_NAME}/*" worker/projects/ || true
-
-      # 3. Trigger live Cloud Run service endpoint in asia-south1
-      - name: Trigger Live Cloud Run Scheduler Endpoint
-        if: ${{ github.event_name == 'schedule' || inputs.trigger_cloud_run == true }}
-        run: |
-          echo "### 🌐 Triggering Cloud Run Service (asia-south1)..."
-          HTTP_RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" -X POST "https://planner-service-715525810343.asia-south1.run.app/api/v1/scheduler/trigger" \
+          echo "### 🌐 Triggering Cloud Run Sweep Endpoint..."
+          REQ_ID="req-daily-$(date +%s)"
+          
+          HTTP_RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" -X POST "${BASE_URL}/api/v1/scheduler/trigger" \
             -H "Content-Type: application/json" \
-            -H "x-request-id: req-ci-daily-$(date +%s)")
+            -H "x-request-id: ${REQ_ID}")
           
           STATUS_CODE=$(echo "$HTTP_RESPONSE" | grep "HTTP_STATUS:" | cut -d':' -f2)
           BODY=$(echo "$HTTP_RESPONSE" | sed '/HTTP_STATUS:/d')
@@ -75,21 +38,57 @@ jobs:
           echo "Response Status: $STATUS_CODE"
           echo "Response Body: $BODY"
           
-          if [ "$STATUS_CODE" -eq 200 ]; then
-            echo "✅ Live Cloud Run scheduler trigger succeeded!"
-          else
-            echo "⚠️ Cloud Run trigger returned status $STATUS_CODE (continuing with local repository sweep)"
+          if [ "$STATUS_CODE" -ne 200 ]; then
+            echo "❌ Failed to trigger Cloud Run scheduler (Status: $STATUS_CODE)"
+            exit 1
           fi
+          
+          SCANNED_PROJECTS=$(echo "$BODY" | jq -r '.data.scannedProjects // 0')
+          PENDING_TASKS=$(echo "$BODY" | jq -r '.data.pendingTasksFound // 0')
+          EMAILS_SENT=$(echo "$BODY" | jq -r '.data.emailsDispatched // 0')
+          
+          echo "scanned_projects=$SCANNED_PROJECTS" >> $GITHUB_OUTPUT
+          echo "pending_tasks=$PENDING_TASKS" >> $GITHUB_OUTPUT
+          echo "emails_sent=$EMAILS_SENT" >> $GITHUB_OUTPUT
 
-      # 4. Execute Go sweep engine to scan projects and dispatch reminder emails / step summary
-      - name: Execute Pending Tasks Sweep & Send Digest Emails
-        env:
-          EMAIL_MODE: ${{ secrets.SMTP_HOST != '' && 'smtp' || 'logger' }}
-          SMTP_HOST: ${{ secrets.SMTP_HOST }}
-          SMTP_PORT: ${{ secrets.SMTP_PORT || '587' }}
-          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
-          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
-          PROJECTS_DIR: "./projects"
+      # 2. Query Live REST API to Build Rich Markdown Summary for GitHub
+      - name: Query Live Projects & Format Step Summary
         run: |
-          cd worker
-          go run server/main.go --sweep-only
+          echo "# 📋 Daily Task Reminder Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Source:** Live Cloud Run Service (\`$BASE_URL\`)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Execution Time:** $(date -u '+%Y-%m-%d %H:%M:%S UTC') (10:00 AM IST)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Projects Scanned:** ${{ steps.trigger_sweep.outputs.scanned_projects }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Pending Tasks Found:** ${{ steps.trigger_sweep.outputs.pending_tasks }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Digest Emails Dispatched:** ${{ steps.trigger_sweep.outputs.emails_sent }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          PROJECTS_JSON=$(curl -s -H "x-request-id: req-summary-$(date +%s)" "${BASE_URL}/api/v1/projects")
+          PROJECT_COUNT=$(echo "$PROJECTS_JSON" | jq -r '.data | length // 0')
+          
+          if [ "$PROJECT_COUNT" -eq 0 ]; then
+            echo "ℹ️ *No projects currently registered in Cloud Storage.*" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### 📂 Active Projects & Tasks Overview" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "| Project ID | Name | Status | Pending Tasks |" >> $GITHUB_STEP_SUMMARY
+            echo "|---|---|---|---|" >> $GITHUB_STEP_SUMMARY
+            
+            for row in $(echo "$PROJECTS_JSON" | jq -r '.data[] | @base64'); do
+              _jq() {
+                echo ${row} | base64 --decode | jq -r ${1}
+              }
+              PROJ_ID=$(_jq '.projectId')
+              PROJ_NAME=$(_jq '.name')
+              PROJ_STATUS=$(_jq '.status')
+              
+              TASKS_JSON=$(curl -s -H "x-request-id: req-tasks-${PROJ_ID}" "${BASE_URL}/api/v1/projects/${PROJ_ID}/tasks?status=PENDING")
+              TASK_COUNT=$(echo "$TASKS_JSON" | jq -r '.data | length // 0')
+              
+              echo "| \`$PROJ_ID\` | **$PROJ_NAME** | \`$PROJ_STATUS\` | **$TASK_COUNT** pending |" >> $GITHUB_STEP_SUMMARY
+            done
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "✅ *Daily reminder sweep executed successfully against persistent cloud storage.*" >> $GITHUB_STEP_SUMMARY
