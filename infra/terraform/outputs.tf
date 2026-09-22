@@ -12,3 +12,13 @@ output "service_account_email" {
   description = "The Service Account email used by Cloud Run"
   value       = google_service_account.cloud_run_sa.email
 }
+
+output "gcs_bucket_name" {
+  description = "The Google Cloud Storage bucket name for persistent task data"
+  value       = google_storage_bucket.data_bucket.name
+}
+
+output "gcs_bucket_url" {
+  description = "The Google Cloud Storage bucket URL"
+  value       = "gs://${google_storage_bucket.data_bucket.name}"
+}

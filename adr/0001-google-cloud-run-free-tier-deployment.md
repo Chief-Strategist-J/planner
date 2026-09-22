@@ -47,8 +47,12 @@ flowchart TD
                 ProjectsHandler["Projects Controller (/api/v1/projects)"]
                 TasksHandler["Tasks Controller (/api/v1/projects/:id/tasks)"]
                 Scheduler["Daily Reminder Sweep Engine (/api/v1/scheduler/trigger)"]
-                Storage["Atomic YAML Engine & Ephemeral Storage (/app/data)"]
+                Storage["Atomic YAML Engine (/app/projects)"]
             end
+        end
+
+        subgraph PersistentStorage["Persistent Storage (Free-Tier: 5GB)"]
+            GCS["Cloud Storage: gs://planner-app-66733-data\nMounted at /app/projects via FUSE volume"]
         end
 
         subgraph Security["Security & Identity Management"]
@@ -85,9 +89,11 @@ flowchart TD
     ProjectsHandler --> Storage
     TasksHandler --> Storage
     Scheduler --> Storage
+    Storage -->|"FUSE Volume Sync"| GCS
 
     %% Identity, Secrets & External Notifications
     Container -.->|"Assumes Identity"| SA
+    SA -->|"roles/storage.objectAdmin"| GCS
     SA -->|"Access Secrets"| SecMgr
     Scheduler -->|"Send Digest Emails"| SMTP
     Container -->|"Emit Structured Logs"| LogWriter

@@ -18,3 +18,9 @@ import {
   to = google_cloud_run_v2_service.planner_service
   id = "projects/${var.project_id}/locations/${var.region}/services/${var.service_name}"
 }
+
+import {
+  to = google_storage_bucket.data_bucket
+  id = var.gcs_bucket_name
+}
+
