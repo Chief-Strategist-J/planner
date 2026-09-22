@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log"
 	"net/http"
@@ -25,22 +26,23 @@ import (
 /*
 TOP-LEVEL ALGORITHM BLUEPRINT: HTTP SERVER & SCHEDULER BOOTSTRAPPER
 ===================================================================
-1. Configuration Ingestion:
+1. CLI Flag & Configuration Ingestion:
+   - Evaluates `--sweep-only` flag to support headless scheduled CI execution without starting the HTTP server.
    - Locates and parses `config/default.yaml` with environment variable overrides.
 2. Dependency Graph Construction:
    - Instantiates YamlProjectRepository and YamlTaskRepository rooted in configured projects directory.
    - Instantiates domain ProjectsService and TasksService with injected repository ports.
    - Instantiates SmtpEmailAdapter configured for logger or SMTP dispatch.
    - Instantiates DailySchedulerEngine wired to task repository and email ports.
-   - Instantiates IdempotencyStore for duplicate mutation suppression.
-   - Instantiates ProjectsRestHandler, TasksRestHandler and TasksRouter.
-3. Subsystem Lifecycle & Graceful Termination:
-   - Spawns DailySchedulerEngine background ticker if enabled.
-   - Launches HTTP server with explicit timeout protections.
-   - Traps SIGINT and SIGTERM OS signals to execute coordinated graceful shutdown.
+3. Execution Branches:
+   - CLI Sweep Mode: If `--sweep-only` is provided, executes one sweep, writes GitHub step summary (if in CI), and exits.
+   - Server Mode: Launches HTTP server with explicit timeout protections and graceful signal termination.
 */
 
 func main() {
+	sweepOnly := flag.Bool("sweep-only", false, "Execute single sweep for pending tasks and exit")
+	flag.Parse()
+
 	cfgPath := "config/default.yaml"
 	if customPath := os.Getenv("CONFIG_PATH"); customPath != "" {
 		cfgPath = customPath
@@ -82,6 +84,19 @@ func main() {
 		cfg.Scheduler.IntervalMinutes,
 		"team@planner.internal",
 	)
+
+	if *sweepOnly {
+		log.Println("[INFO] Executing pending task sweep in CLI mode...")
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		res, err := sched.TriggerSweep(ctx)
+		if err != nil {
+			log.Fatalf("[FATAL] Sweep execution failed: %v", err)
+		}
+		log.Printf("[SUCCESS] Sweep finished. Projects: %d | Pending Tasks: %d | Emails Dispatched: %d",
+			res.ScannedProjects, res.PendingTasksFound, res.EmailsDispatched)
+		return
+	}
 
 	if cfg.Scheduler.Enabled {
 		sched.Start()

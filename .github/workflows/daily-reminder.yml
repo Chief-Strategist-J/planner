@@ -1,0 +1,36 @@
+name: Daily Task Reminder Sweep
+
+on:
+  schedule:
+    - cron: '0 9 * * *' # Executes daily at 09:00 UTC
+  workflow_dispatch:      # Allows manual trigger via GitHub Actions UI
+
+permissions:
+  contents: read
+
+jobs:
+  sweep-and-notify:
+    name: Scan Pending Tasks & Dispatch Reminders
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache-dependency-path: worker/go.sum
+
+      - name: Run Pending Tasks Sweep & Send Reminders
+        env:
+          EMAIL_MODE: ${{ secrets.SMTP_HOST != '' && 'smtp' || 'logger' }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT || '587' }}
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          PROJECTS_DIR: "./projects"
+        run: |
+          cd worker
+          go run server/main.go --sweep-only

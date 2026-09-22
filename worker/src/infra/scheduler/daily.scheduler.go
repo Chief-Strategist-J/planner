@@ -2,7 +2,10 @@ package scheduler
 
 import (
 	"context"
+	"fmt"
 	"log"
+	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -24,8 +27,11 @@ TOP-LEVEL ALGORITHM BLUEPRINT: DAILY TASK SCHEDULER ENGINE
      b. If AssignedToEmail is blank, aggregates under the default fallback address ("team@planner.internal").
    - Dispatches one digest email per distinct recipient containing all relevant pending tasks.
    - Computes and returns structured SchedulerSweepResult metrics.
-3. On-Demand Trigger Support:
-   - Exposes TriggerSweep(ctx) publicly so administrators or automated triggers can invoke sweeps via API.
+3. CI/CD Step Summary Emission:
+   - If running within GitHub Actions environment ($GITHUB_STEP_SUMMARY set),
+     formats and writes a rich Markdown summary table with projects, tasks, priorities, and assignees.
+4. On-Demand Trigger Support:
+   - Exposes TriggerSweep(ctx) publicly so administrators or automated triggers can invoke sweeps via API or CLI.
 */
 
 type DailySchedulerEngine struct {
@@ -140,8 +146,46 @@ func (s *DailySchedulerEngine) TriggerSweep(ctx context.Context) (*types.Schedul
 		EmailsDispatched:  emailsDispatched,
 	}
 
+	if summaryFile := os.Getenv("GITHUB_STEP_SUMMARY"); summaryFile != "" {
+		writeGithubStepSummary(summaryFile, result, pendingByProject)
+	}
+
 	log.Printf("[SCHEDULER-SWEEP] Projects scanned: %d | Pending tasks: %d | Emails sent: %d",
 		result.ScannedProjects, result.PendingTasksFound, result.EmailsDispatched)
 
 	return result, nil
+}
+
+func writeGithubStepSummary(filePath string, res *types.SchedulerSweepResult, pendingByProject map[string][]types.Task) {
+	var sb strings.Builder
+	sb.WriteString("# 📋 Daily Task Reminder Summary\n\n")
+	sb.WriteString(fmt.Sprintf("**Projects Scanned:** %d | **Pending Tasks Found:** %d | **Emails Dispatched:** %d\n\n",
+		res.ScannedProjects, res.PendingTasksFound, res.EmailsDispatched))
+
+	if res.PendingTasksFound == 0 {
+		sb.WriteString("🎉 **All tasks are completed! No pending tasks found.**\n")
+	} else {
+		sb.WriteString("| Project | Task ID | Title | Priority | Assignee | Due Date |\n")
+		sb.WriteString("|---|---|---|---|---|---|\n")
+		for projId, tasks := range pendingByProject {
+			for _, t := range tasks {
+				assignee := t.AssignedToEmail
+				if assignee == "" {
+					assignee = "_Unassigned_"
+				}
+				due := t.DueDate
+				if due == "" {
+					due = "_No date_"
+				}
+				prio := string(t.Priority)
+				if prio == "" {
+					prio = "MEDIUM"
+				}
+				sb.WriteString(fmt.Sprintf("| `%s` | `%s` | %s | **%s** | %s | %s |\n",
+					projId, t.TaskId, t.Title, prio, assignee, due))
+			}
+		}
+	}
+
+	_ = os.WriteFile(filePath, []byte(sb.String()), 0644)
 }
