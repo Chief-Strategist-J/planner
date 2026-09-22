@@ -1,0 +1,370 @@
+openapi: 3.1.0
+info:
+  title: Planner & Task Scheduler API
+  version: 1.0.0
+  description: Authoritative OpenAPI contract for the Planner and Task Scheduler system.
+paths:
+  /api/v1/projects/{projectId}/tasks:
+    post:
+      summary: Upsert a task within a project
+      operationId: upsertTask
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: x-request-id
+          in: header
+          required: true
+          schema:
+            type: string
+        - name: x-correlation-id
+          in: header
+          required: false
+          schema:
+            type: string
+        - name: x-idempotency-key
+          in: header
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertTaskRequest'
+      responses:
+        '200':
+          description: Task successfully upserted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskSingleResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Idempotency conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    get:
+      summary: List tasks for a project
+      operationId: listTasks
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [PENDING, IN_PROGRESS, COMPLETED, CANCELLED]
+      responses:
+        '200':
+          description: List of tasks
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskListResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/projects/{projectId}/tasks/{taskId}:
+    get:
+      summary: Get a specific task by ID
+      operationId: getTaskById
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Task details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskSingleResponse'
+        '404':
+          description: Task not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/projects/{projectId}/tasks/{taskId}/status:
+    patch:
+      summary: Update the status of an existing task
+      operationId: updateTaskStatus
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTaskStatusRequest'
+      responses:
+        '200':
+          description: Task status updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskSingleResponse'
+        '400':
+          description: Invalid status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Task not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/scheduler/trigger:
+    post:
+      summary: Trigger immediate sweep for pending tasks and dispatch email notifications
+      operationId: triggerSchedulerSweep
+      responses:
+        '200':
+          description: Scheduler sweep completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerSweepResponse'
+
+components:
+  schemas:
+    Meta:
+      type: object
+      required:
+        - requestId
+        - correlationId
+        - timestamp
+        - executionTimeMs
+        - apiVersion
+      properties:
+        requestId:
+          type: string
+        correlationId:
+          type: string
+        timestamp:
+          type: string
+        executionTimeMs:
+          type: integer
+        apiVersion:
+          type: string
+
+    ErrorDetail:
+      type: object
+      required:
+        - field
+        - issue
+      properties:
+        field:
+          type: string
+        issue:
+          type: string
+
+    ErrorInfo:
+      type: object
+      required:
+        - code
+        - message
+        - retryable
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        retryable:
+          type: boolean
+        details:
+          type: array
+          items:
+            $ref: '#/components/schemas/ErrorDetail'
+
+    ErrorResponse:
+      type: object
+      required:
+        - success
+        - statusCode
+        - error
+        - meta
+      properties:
+        success:
+          type: boolean
+          enum: [false]
+        statusCode:
+          type: integer
+        error:
+          $ref: '#/components/schemas/ErrorInfo'
+        meta:
+          $ref: '#/components/schemas/Meta'
+
+    Task:
+      type: object
+      required:
+        - taskId
+        - projectId
+        - title
+        - status
+        - createdAt
+        - updatedAt
+      properties:
+        taskId:
+          type: string
+        projectId:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        status:
+          type: string
+          enum: [PENDING, IN_PROGRESS, COMPLETED, CANCELLED]
+        assignedToEmail:
+          type: string
+        dueDate:
+          type: string
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+
+    UpsertTaskRequest:
+      type: object
+      required:
+        - taskId
+        - title
+      properties:
+        taskId:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        status:
+          type: string
+          enum: [PENDING, IN_PROGRESS, COMPLETED, CANCELLED]
+        assignedToEmail:
+          type: string
+        dueDate:
+          type: string
+
+    UpdateTaskStatusRequest:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum: [PENDING, IN_PROGRESS, COMPLETED, CANCELLED]
+
+    TaskSingleResponse:
+      type: object
+      required:
+        - success
+        - statusCode
+        - data
+        - meta
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        statusCode:
+          type: integer
+        data:
+          $ref: '#/components/schemas/Task'
+        meta:
+          $ref: '#/components/schemas/Meta'
+
+    TaskListResponse:
+      type: object
+      required:
+        - success
+        - statusCode
+        - data
+        - meta
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        statusCode:
+          type: integer
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Task'
+        meta:
+          $ref: '#/components/schemas/Meta'
+
+    SchedulerSweepData:
+      type: object
+      required:
+        - scannedProjects
+        - pendingTasksFound
+        - emailsDispatched
+      properties:
+        scannedProjects:
+          type: integer
+        pendingTasksFound:
+          type: integer
+        emailsDispatched:
+          type: integer
+
+    SchedulerSweepResponse:
+      type: object
+      required:
+        - success
+        - statusCode
+        - data
+        - meta
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        statusCode:
+          type: integer
+        data:
+          $ref: '#/components/schemas/SchedulerSweepData'
+        meta:
+          $ref: '#/components/schemas/Meta'
