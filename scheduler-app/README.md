@@ -1,17 +1,60 @@
-# scheduler_app
+# 📱 Scheduler App — Flutter Mobile Client
 
-A new Flutter project.
+A modern, responsive cross-platform Flutter mobile client for the **Planner & Task Scheduler** system.
 
-## Getting Started
+---
 
-This project is a starting point for a Flutter application.
+## ✨ Features
 
-A few resources to get you started if this is your first Flutter project:
+* **Real-Time Task Tracking:** View and manage tasks categorized by project.
+* **Filter by Status:** Filter tasks by `PENDING`, `IN_PROGRESS`, and `COMPLETED`.
+* **Cloud Run Connected:** Communicates with the live serverless backend hosted on Google Cloud Run (`https://planner-service-715525810343.asia-south1.run.app`).
+* **On-Demand Reminders Sweep:** Trigger automated email reminder sweeps directly from the app.
+* **Offline-Ready Design:** Structured architecture following clean code separation (Data, Domain, Presentation).
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+---
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## 🏗️ Architecture
+
+```
+lib/
+├── core/
+│   ├── constants/
+│   │   ├── app_colors.dart         # Theme & palette tokens
+│   │   └── app_endpoints.dart      # REST API endpoints
+│   └── network/
+│       └── api_client.dart         # HTTP client & interceptors
+├── data/
+│   ├── models/                     # DTOs & JSON serialization
+│   └── repositories/               # Remote API implementations
+├── domain/
+│   ├── entities/                   # Pure business entities
+│   └── repositories/               # Repository interfaces/ports
+├── presentation/
+│   ├── screens/                    # UI screens (Projects, Tasks, Dashboard)
+│   └── widgets/                    # Reusable components
+└── main.dart                       # Application entry point
+```
+
+---
+
+## 🚀 Getting Started
+
+### Prerequisites
+* Flutter SDK `^3.19.0`
+* Dart SDK `^3.3.0`
+* Android Studio or Xcode (for physical device / emulator deployment)
+
+### Setup & Execution
+1. Fetch dependencies:
+   ```bash
+   flutter pub get
+   ```
+2. Run on connected device or simulator:
+   ```bash
+   flutter run
+   ```
+3. Build release APK:
+   ```bash
+   flutter build apk --release
+   ```
