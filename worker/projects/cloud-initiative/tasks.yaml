@@ -1,0 +1,13 @@
+projectId: cloud-initiative
+lastUpdated: 2026-09-22T10:00:00.000Z
+tasks:
+  - taskId: task-email-verify
+    projectId: cloud-initiative
+    title: Verify Automated Email Reminders
+    description: Verification of automated daily morning task digest
+    status: PENDING
+    priority: HIGH
+    assignedToEmail: jaydeep.v@blute.co.in
+    dueDate: 2026-09-23
+    createdAt: 2026-09-22T10:00:00.000Z
+    updatedAt: 2026-09-22T10:00:00.000Z
