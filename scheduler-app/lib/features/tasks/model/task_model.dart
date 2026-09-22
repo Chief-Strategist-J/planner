@@ -77,7 +77,6 @@ class TaskModel extends Equatable {
   Map<String, dynamic> toJson() {
     return {
       'taskId': taskId,
-      'projectId': projectId,
       'title': title,
       'description': description,
       'status': status.value,
