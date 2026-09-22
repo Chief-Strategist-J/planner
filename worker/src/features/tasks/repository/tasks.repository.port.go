@@ -17,6 +17,7 @@ TOP-LEVEL ALGORITHM BLUEPRINT: TASK REPOSITORY PORT INTERFACE
    - GetTaskById: Retrieves a single task by its unique identifier within a project.
    - ListTasksByProject: Returns tasks for a project, optionally filtered by status.
    - ListAllPendingTasks: Scans across all projects to aggregate pending items for scheduled sweeps.
+   - DeleteTask: Removes a specific task record from the project tasks collection.
 */
 
 type TaskRepositoryPort interface {
@@ -24,4 +25,5 @@ type TaskRepositoryPort interface {
 	GetTaskById(ctx context.Context, projectId string, taskId string) (*types.Task, error)
 	ListTasksByProject(ctx context.Context, projectId string, statusFilter *types.TaskStatus) ([]types.Task, error)
 	ListAllPendingTasks(ctx context.Context) (map[string][]types.Task, error)
+	DeleteTask(ctx context.Context, projectId string, taskId string) error
 }

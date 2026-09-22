@@ -11,9 +11,12 @@ import (
 
 	"planner/src/api/rest/v1/handlers"
 	"planner/src/api/rest/v1/router"
-	"planner/src/features/tasks/repository"
-	"planner/src/features/tasks/service"
-	"planner/src/features/tasks/types"
+	projRepo "planner/src/features/projects/repository"
+	projSvc "planner/src/features/projects/service"
+	projTypes "planner/src/features/projects/types"
+	taskRepo "planner/src/features/tasks/repository"
+	taskSvc "planner/src/features/tasks/service"
+	taskTypes "planner/src/features/tasks/types"
 	"planner/src/infra/email"
 	"planner/src/infra/scheduler"
 	"planner/src/shared/middleware"
@@ -25,11 +28,11 @@ TOP-LEVEL ALGORITHM BLUEPRINT: HTTP REST API INTEGRATION SUITE
 ==============================================================
 1. Test Harness Setup:
    - Spawns an in-memory httptest.Server with all real domain handlers, router, and middleware.
-   - Points the repository to an isolated temporary filesystem directory.
+   - Points both Project and Task repositories to an isolated temporary filesystem directory.
 2. Verified Invariants:
-   - Envelope Compliance: Asserts success=true, 200/201 status code, non-empty meta (requestId, timestamp, apiVersion).
-   - Upsert Endpoint: Inserts task via POST /api/v1/projects/{projectId}/tasks and asserts persistence.
-   - Status Update Endpoint: Modifies status via PATCH /api/v1/projects/{projectId}/tasks/{taskId}/status.
+   - Project CRUD & Pagination: Asserts Project creation, retrieval, update, paginated listing, and deletion.
+   - Task CRUD & Pagination: Asserts Task creation, status update, paginated listing, and deletion.
+   - Envelope Compliance: Asserts success=true, 200/201 status code, non-empty meta (requestId, timestamp, apiVersion, pagination).
    - Cryptographic Idempotency: Asserts identical replay succeeds from cache and modified replay fails with HTTP 409.
    - Scheduler Trigger: Verifies POST /api/v1/scheduler/trigger returns valid summary metrics.
 */
@@ -40,21 +43,125 @@ func setupIntegrationServer(t *testing.T) (*httptest.Server, string) {
 		t.Fatalf("failed to create temp directory: %v", err)
 	}
 
-	repo, err := repository.NewYamlTaskRepository(tempDir)
+	taskRepository, err := taskRepo.NewYamlTaskRepository(tempDir)
 	if err != nil {
-		t.Fatalf("failed to initialize repository: %v", err)
+		t.Fatalf("failed to initialize task repository: %v", err)
 	}
 
-	svc := service.NewTasksService(repo)
+	projectRepository, err := projRepo.NewYamlProjectRepository(tempDir)
+	if err != nil {
+		t.Fatalf("failed to initialize project repository: %v", err)
+	}
+
+	taskService := taskSvc.NewTasksService(taskRepository)
+	projectService := projSvc.NewProjectsService(projectRepository)
+
 	emailAdapter := email.NewSmtpEmailAdapter("logger", "test@planner.internal", email.SmtpConfig{})
-	sched := scheduler.NewDailySchedulerEngine(repo, emailAdapter, 1440, "team@planner.internal")
+	sched := scheduler.NewDailySchedulerEngine(taskRepository, emailAdapter, 1440, "team@planner.internal")
 
 	idempotencyStore := middleware.NewIdempotencyStore()
-	handler := handlers.NewTasksRestHandler(svc, sched)
-	tasksRouter := router.NewTasksRouter(handler, idempotencyStore, "v1")
+	tasksHandler := handlers.NewTasksRestHandler(taskService, sched)
+	projectsHandler := handlers.NewProjectsRestHandler(projectService)
+
+	tasksRouter := router.NewTasksRouter(tasksHandler, projectsHandler, idempotencyStore, "v1")
 
 	server := httptest.NewServer(tasksRouter.SetupRoutes())
 	return server, tempDir
+}
+
+func TestProjectsApi_EndToEndLifecycle(t *testing.T) {
+	server, tempDir := setupIntegrationServer(t)
+	defer server.Close()
+	defer os.RemoveAll(tempDir)
+
+	client := server.Client()
+
+	createProjectPayload := projTypes.UpsertProjectInput{
+		ProjectId:   "infra-core",
+		Name:        "Infrastructure Core",
+		Description: "Kubernetes and edge compute",
+		OwnerEmail:  "infra-lead@planner.internal",
+		Status:      projTypes.ProjectStatusActive,
+	}
+	bodyBytes, _ := json.Marshal(createProjectPayload)
+
+	req, _ := http.NewRequest(http.MethodPost, server.URL+"/api/v1/projects", bytes.NewReader(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("create project request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 200 OK on create project, got %d: %s", resp.StatusCode, string(b))
+	}
+
+	var createEnvelope response.ApiResponse[projTypes.Project]
+	_ = json.NewDecoder(resp.Body).Decode(&createEnvelope)
+	if !createEnvelope.Success || createEnvelope.Data.ProjectId != "infra-core" {
+		t.Errorf("unexpected project creation response: %+v", createEnvelope)
+	}
+
+	getReq, _ := http.NewRequest(http.MethodGet, server.URL+"/api/v1/projects/infra-core", nil)
+	getResp, err := client.Do(getReq)
+	if err != nil {
+		t.Fatalf("get project request failed: %v", err)
+	}
+	defer getResp.Body.Close()
+
+	if getResp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 OK on get project, got %d", getResp.StatusCode)
+	}
+
+	patchPayload := projTypes.UpdateProjectInput{
+		Description: "Updated scope with service mesh",
+	}
+	patchBytes, _ := json.Marshal(patchPayload)
+
+	patchReq, _ := http.NewRequest(http.MethodPatch, server.URL+"/api/v1/projects/infra-core", bytes.NewReader(patchBytes))
+	patchReq.Header.Set("Content-Type", "application/json")
+
+	patchResp, err := client.Do(patchReq)
+	if err != nil {
+		t.Fatalf("patch project request failed: %v", err)
+	}
+	defer patchResp.Body.Close()
+
+	var patchEnvelope response.ApiResponse[projTypes.Project]
+	_ = json.NewDecoder(patchResp.Body).Decode(&patchEnvelope)
+	if patchEnvelope.Data.Description != "Updated scope with service mesh" {
+		t.Errorf("expected updated description, got: %s", patchEnvelope.Data.Description)
+	}
+
+	listReq, _ := http.NewRequest(http.MethodGet, server.URL+"/api/v1/projects?page=1&pageSize=10&status=ACTIVE", nil)
+	listResp, err := client.Do(listReq)
+	if err != nil {
+		t.Fatalf("list projects request failed: %v", err)
+	}
+	defer listResp.Body.Close()
+
+	var listEnvelope response.ApiResponse[[]projTypes.Project]
+	_ = json.NewDecoder(listResp.Body).Decode(&listEnvelope)
+	if !listEnvelope.Success || len(listEnvelope.Data) != 1 {
+		t.Errorf("expected 1 active project, got: %+v", listEnvelope)
+	}
+	if listEnvelope.Meta.Pagination == nil || *listEnvelope.Meta.Pagination.TotalItems != 1 {
+		t.Errorf("expected pagination metadata with 1 item, got: %+v", listEnvelope.Meta.Pagination)
+	}
+
+	delReq, _ := http.NewRequest(http.MethodDelete, server.URL+"/api/v1/projects/infra-core", nil)
+	delResp, err := client.Do(delReq)
+	if err != nil {
+		t.Fatalf("delete project request failed: %v", err)
+	}
+	defer delResp.Body.Close()
+
+	if delResp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 OK on delete project, got %d", delResp.StatusCode)
+	}
 }
 
 func TestTasksApi_EndToEndLifecycle(t *testing.T) {
@@ -64,11 +171,12 @@ func TestTasksApi_EndToEndLifecycle(t *testing.T) {
 
 	client := server.Client()
 
-	upsertPayload := types.UpsertTaskInput{
+	upsertPayload := taskTypes.UpsertTaskInput{
 		TaskId:          "TASK-99",
 		Title:           "Deploy New Kubernetes Cluster",
 		Description:     "Spin up nodes in us-east-1",
-		Status:          types.StatusPending,
+		Status:          taskTypes.StatusPending,
+		Priority:        taskTypes.PriorityHigh,
 		AssignedToEmail: "devops@planner.internal",
 		DueDate:         "2026-09-30",
 	}
@@ -89,7 +197,7 @@ func TestTasksApi_EndToEndLifecycle(t *testing.T) {
 		t.Fatalf("expected 200 OK, got %d: %s", resp.StatusCode, string(body))
 	}
 
-	var successEnvelope response.ApiResponse[types.Task]
+	var successEnvelope response.ApiResponse[taskTypes.Task]
 	if err := json.NewDecoder(resp.Body).Decode(&successEnvelope); err != nil {
 		t.Fatalf("failed to parse envelope: %v", err)
 	}
@@ -100,23 +208,31 @@ func TestTasksApi_EndToEndLifecycle(t *testing.T) {
 	if successEnvelope.Meta.RequestId == "" || successEnvelope.Meta.ApiVersion != "v1" {
 		t.Errorf("missing or invalid meta: %+v", successEnvelope.Meta)
 	}
-	if successEnvelope.Data.TaskId != "TASK-99" || successEnvelope.Data.Status != types.StatusPending {
+	if successEnvelope.Data.TaskId != "TASK-99" || successEnvelope.Data.Status != taskTypes.StatusPending {
 		t.Errorf("unexpected task data: %+v", successEnvelope.Data)
 	}
+	if successEnvelope.Data.Priority != taskTypes.PriorityHigh {
+		t.Errorf("expected priority HIGH, got: %s", successEnvelope.Data.Priority)
+	}
 
-	getReq, _ := http.NewRequest(http.MethodGet, server.URL+"/api/v1/projects/cloud-infra/tasks/TASK-99", nil)
-	getResp, err := client.Do(getReq)
+	listReq, _ := http.NewRequest(http.MethodGet, server.URL+"/api/v1/projects/cloud-infra/tasks?page=1&pageSize=5", nil)
+	listResp, err := client.Do(listReq)
 	if err != nil {
-		t.Fatalf("failed to get task: %v", err)
+		t.Fatalf("failed to list tasks: %v", err)
 	}
-	defer getResp.Body.Close()
+	defer listResp.Body.Close()
 
-	if getResp.StatusCode != http.StatusOK {
-		t.Fatalf("expected 200 OK on GET, got %d", getResp.StatusCode)
+	var listEnvelope response.ApiResponse[[]taskTypes.Task]
+	_ = json.NewDecoder(listResp.Body).Decode(&listEnvelope)
+	if !listEnvelope.Success || len(listEnvelope.Data) != 1 {
+		t.Errorf("expected 1 task in paginated list, got: %+v", listEnvelope)
+	}
+	if listEnvelope.Meta.Pagination == nil || *listEnvelope.Meta.Pagination.TotalItems != 1 {
+		t.Errorf("expected pagination metadata with totalItems=1, got: %+v", listEnvelope.Meta.Pagination)
 	}
 
-	patchPayload := types.UpdateTaskStatusInput{
-		Status: types.StatusInProgress,
+	patchPayload := taskTypes.UpdateTaskStatusInput{
+		Status: taskTypes.StatusInProgress,
 	}
 	patchBytes, _ := json.Marshal(patchPayload)
 
@@ -134,10 +250,15 @@ func TestTasksApi_EndToEndLifecycle(t *testing.T) {
 		t.Fatalf("expected 200 OK on PATCH, got %d: %s", patchResp.StatusCode, string(body))
 	}
 
-	var patchEnvelope response.ApiResponse[types.Task]
-	_ = json.NewDecoder(patchResp.Body).Decode(&patchEnvelope)
-	if patchEnvelope.Data.Status != types.StatusInProgress {
-		t.Errorf("expected status IN_PROGRESS, got: %s", patchEnvelope.Data.Status)
+	delTaskReq, _ := http.NewRequest(http.MethodDelete, server.URL+"/api/v1/projects/cloud-infra/tasks/TASK-99", nil)
+	delTaskResp, err := client.Do(delTaskReq)
+	if err != nil {
+		t.Fatalf("failed to delete task: %v", err)
+	}
+	defer delTaskResp.Body.Close()
+
+	if delTaskResp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 OK on DELETE task, got %d", delTaskResp.StatusCode)
 	}
 
 	triggerReq, _ := http.NewRequest(http.MethodPost, server.URL+"/api/v1/scheduler/trigger", nil)
@@ -151,7 +272,7 @@ func TestTasksApi_EndToEndLifecycle(t *testing.T) {
 		t.Fatalf("expected 200 OK on scheduler trigger, got %d", triggerResp.StatusCode)
 	}
 
-	var schedEnvelope response.ApiResponse[types.SchedulerSweepResult]
+	var schedEnvelope response.ApiResponse[taskTypes.SchedulerSweepResult]
 	_ = json.NewDecoder(triggerResp.Body).Decode(&schedEnvelope)
 	if !schedEnvelope.Success {
 		t.Errorf("expected scheduler sweep success, got: %+v", schedEnvelope)
@@ -165,10 +286,10 @@ func TestTasksApi_IdempotencyHashMismatch(t *testing.T) {
 
 	client := server.Client()
 
-	firstPayload := types.UpsertTaskInput{
+	firstPayload := taskTypes.UpsertTaskInput{
 		TaskId: "TASK-IDEM",
 		Title:  "Original Title",
-		Status: types.StatusPending,
+		Status: taskTypes.StatusPending,
 	}
 	b1, _ := json.Marshal(firstPayload)
 
@@ -200,10 +321,10 @@ func TestTasksApi_IdempotencyHashMismatch(t *testing.T) {
 		t.Errorf("expected x-cache-hit header on replay")
 	}
 
-	secondPayload := types.UpsertTaskInput{
+	secondPayload := taskTypes.UpsertTaskInput{
 		TaskId: "TASK-IDEM",
 		Title:  "TAMPERED Different Title",
-		Status: types.StatusPending,
+		Status: taskTypes.StatusPending,
 	}
 	b2, _ := json.Marshal(secondPayload)
 

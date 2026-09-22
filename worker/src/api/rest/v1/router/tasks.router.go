@@ -8,8 +8,8 @@ import (
 )
 
 /*
-TOP-LEVEL ALGORITHM BLUEPRINT: TASK REST ROUTER
-===============================================
+TOP-LEVEL ALGORITHM BLUEPRINT: PLANNER REST ROUTER
+==================================================
 1. Multiplexer & Routing Registry:
    - Registers standard REST resource endpoints on the native Go 1.22+ http.ServeMux.
    - Extracts path parameters ({projectId}, {taskId}) via r.PathValue().
@@ -18,22 +18,38 @@ TOP-LEVEL ALGORITHM BLUEPRINT: TASK REST ROUTER
    - Injects IdempotencyMiddleware for mutating endpoints.
    - Wraps entire multiplexer with PanicRecoveryMiddleware.
 3. Path Registration:
-   - POST  /api/v1/projects/{projectId}/tasks
-   - GET   /api/v1/projects/{projectId}/tasks
-   - GET   /api/v1/projects/{projectId}/tasks/{taskId}
-   - PATCH /api/v1/projects/{projectId}/tasks/{taskId}/status
-   - POST  /api/v1/scheduler/trigger
+   - Projects:
+     - POST   /api/v1/projects
+     - GET    /api/v1/projects
+     - GET    /api/v1/projects/{projectId}
+     - PATCH  /api/v1/projects/{projectId}
+     - DELETE /api/v1/projects/{projectId}
+   - Tasks:
+     - POST   /api/v1/projects/{projectId}/tasks
+     - GET    /api/v1/projects/{projectId}/tasks
+     - GET    /api/v1/projects/{projectId}/tasks/{taskId}
+     - PATCH  /api/v1/projects/{projectId}/tasks/{taskId}/status
+     - DELETE /api/v1/projects/{projectId}/tasks/{taskId}
+   - Scheduler:
+     - POST   /api/v1/scheduler/trigger
 */
 
 type TasksRouter struct {
-	handler          *handlers.TasksRestHandler
+	tasksHandler     *handlers.TasksRestHandler
+	projectsHandler  *handlers.ProjectsRestHandler
 	idempotencyStore *middleware.IdempotencyStore
 	apiVersion       string
 }
 
-func NewTasksRouter(handler *handlers.TasksRestHandler, idempotencyStore *middleware.IdempotencyStore, apiVersion string) *TasksRouter {
+func NewTasksRouter(
+	tasksHandler *handlers.TasksRestHandler,
+	projectsHandler *handlers.ProjectsRestHandler,
+	idempotencyStore *middleware.IdempotencyStore,
+	apiVersion string,
+) *TasksRouter {
 	return &TasksRouter{
-		handler:          handler,
+		tasksHandler:     tasksHandler,
+		projectsHandler:  projectsHandler,
 		idempotencyStore: idempotencyStore,
 		apiVersion:       apiVersion,
 	}
@@ -42,30 +58,59 @@ func NewTasksRouter(handler *handlers.TasksRestHandler, idempotencyStore *middle
 func (tr *TasksRouter) SetupRoutes() http.Handler {
 	mux := http.NewServeMux()
 
+	mux.HandleFunc("POST /api/v1/projects", func(w http.ResponseWriter, r *http.Request) {
+		tr.projectsHandler.UpsertProject(w, r)
+	})
+
+	mux.HandleFunc("GET /api/v1/projects", func(w http.ResponseWriter, r *http.Request) {
+		tr.projectsHandler.ListProjects(w, r)
+	})
+
+	mux.HandleFunc("GET /api/v1/projects/{projectId}", func(w http.ResponseWriter, r *http.Request) {
+		projectId := r.PathValue("projectId")
+		tr.projectsHandler.GetProjectById(w, r, projectId)
+	})
+
+	mux.HandleFunc("PATCH /api/v1/projects/{projectId}", func(w http.ResponseWriter, r *http.Request) {
+		projectId := r.PathValue("projectId")
+		tr.projectsHandler.UpdateProject(w, r, projectId)
+	})
+
+	mux.HandleFunc("DELETE /api/v1/projects/{projectId}", func(w http.ResponseWriter, r *http.Request) {
+		projectId := r.PathValue("projectId")
+		tr.projectsHandler.DeleteProject(w, r, projectId)
+	})
+
 	mux.HandleFunc("POST /api/v1/projects/{projectId}/tasks", func(w http.ResponseWriter, r *http.Request) {
 		projectId := r.PathValue("projectId")
-		tr.handler.UpsertTask(w, r, projectId)
+		tr.tasksHandler.UpsertTask(w, r, projectId)
 	})
 
 	mux.HandleFunc("GET /api/v1/projects/{projectId}/tasks", func(w http.ResponseWriter, r *http.Request) {
 		projectId := r.PathValue("projectId")
-		tr.handler.ListTasks(w, r, projectId)
+		tr.tasksHandler.ListTasks(w, r, projectId)
 	})
 
 	mux.HandleFunc("GET /api/v1/projects/{projectId}/tasks/{taskId}", func(w http.ResponseWriter, r *http.Request) {
 		projectId := r.PathValue("projectId")
 		taskId := r.PathValue("taskId")
-		tr.handler.GetTaskById(w, r, projectId, taskId)
+		tr.tasksHandler.GetTaskById(w, r, projectId, taskId)
 	})
 
 	mux.HandleFunc("PATCH /api/v1/projects/{projectId}/tasks/{taskId}/status", func(w http.ResponseWriter, r *http.Request) {
 		projectId := r.PathValue("projectId")
 		taskId := r.PathValue("taskId")
-		tr.handler.UpdateTaskStatus(w, r, projectId, taskId)
+		tr.tasksHandler.UpdateTaskStatus(w, r, projectId, taskId)
+	})
+
+	mux.HandleFunc("DELETE /api/v1/projects/{projectId}/tasks/{taskId}", func(w http.ResponseWriter, r *http.Request) {
+		projectId := r.PathValue("projectId")
+		taskId := r.PathValue("taskId")
+		tr.tasksHandler.DeleteTask(w, r, projectId, taskId)
 	})
 
 	mux.HandleFunc("POST /api/v1/scheduler/trigger", func(w http.ResponseWriter, r *http.Request) {
-		tr.handler.TriggerSchedulerSweep(w, r)
+		tr.tasksHandler.TriggerSchedulerSweep(w, r)
 	})
 
 	var rootHandler http.Handler = mux

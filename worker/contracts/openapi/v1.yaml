@@ -1,9 +1,142 @@
 openapi: 3.1.0
 info:
   title: Planner & Task Scheduler API
-  version: 1.0.0
-  description: Authoritative OpenAPI contract for the Planner and Task Scheduler system.
+  version: 1.1.0
+  description: Authoritative OpenAPI 3.1 contract for Projects, Tasks, and Scheduler Automation.
 paths:
+  /api/v1/projects:
+    post:
+      summary: Create or upsert a project
+      operationId: upsertProject
+      parameters:
+        - name: x-request-id
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertProjectRequest'
+      responses:
+        '200':
+          description: Project successfully upserted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectSingleResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    get:
+      summary: List projects (paginated)
+      operationId: listProjects
+      parameters:
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 1
+        - name: pageSize
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 10
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [ACTIVE, ON_HOLD, COMPLETED, ARCHIVED]
+      responses:
+        '200':
+          description: Paginated list of projects
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectListResponse'
+
+  /api/v1/projects/{projectId}:
+    get:
+      summary: Get project details by ID
+      operationId: getProjectById
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Project details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectSingleResponse'
+        '404':
+          description: Project not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    patch:
+      summary: Update project metadata or status
+      operationId: updateProject
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProjectRequest'
+      responses:
+        '200':
+          description: Project updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectSingleResponse'
+        '404':
+          description: Project not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      summary: Delete a project
+      operationId: deleteProject
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Project deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteResponse'
+        '404':
+          description: Project not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   /api/v1/projects/{projectId}/tasks:
     post:
       summary: Upsert a task within a project
@@ -17,11 +150,6 @@ paths:
         - name: x-request-id
           in: header
           required: true
-          schema:
-            type: string
-        - name: x-correlation-id
-          in: header
-          required: false
           schema:
             type: string
         - name: x-idempotency-key
@@ -54,14 +182,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-        '500':
-          description: Internal server error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
     get:
-      summary: List tasks for a project
+      summary: List tasks for a project (paginated)
       operationId: listTasks
       parameters:
         - name: projectId
@@ -69,6 +191,18 @@ paths:
           required: true
           schema:
             type: string
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 1
+        - name: pageSize
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 10
         - name: status
           in: query
           required: false
@@ -77,17 +211,11 @@ paths:
             enum: [PENDING, IN_PROGRESS, COMPLETED, CANCELLED]
       responses:
         '200':
-          description: List of tasks
+          description: Paginated list of tasks
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/TaskListResponse'
-        '500':
-          description: Internal server error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
 
   /api/v1/projects/{projectId}/tasks/{taskId}:
     get:
@@ -117,10 +245,37 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      summary: Delete a specific task
+      operationId: deleteTask
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Task deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteResponse'
+        '404':
+          description: Task not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /api/v1/projects/{projectId}/tasks/{taskId}/status:
     patch:
-      summary: Update the status of an existing task
+      summary: Update task status
       operationId: updateTaskStatus
       parameters:
         - name: projectId
@@ -146,22 +301,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TaskSingleResponse'
-        '400':
-          description: Invalid status
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '404':
-          description: Task not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
 
   /api/v1/scheduler/trigger:
     post:
-      summary: Trigger immediate sweep for pending tasks and dispatch email notifications
+      summary: Trigger immediate sweep for pending tasks
       operationId: triggerSchedulerSweep
       responses:
         '200':
@@ -173,6 +316,32 @@ paths:
 
 components:
   schemas:
+    PaginationMeta:
+      type: object
+      required:
+        - page
+        - pageSize
+        - totalItems
+        - totalPages
+        - hasNextPage
+        - hasPreviousPage
+      properties:
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        totalItems:
+          type: integer
+        totalPages:
+          type: integer
+        hasNextPage:
+          type: boolean
+        hasPreviousPage:
+          type: boolean
+        nextCursor:
+          type: string
+          nullable: true
+
     Meta:
       type: object
       required:
@@ -192,51 +361,98 @@ components:
           type: integer
         apiVersion:
           type: string
+        pagination:
+          $ref: '#/components/schemas/PaginationMeta'
 
-    ErrorDetail:
+    Project:
       type: object
       required:
-        - field
-        - issue
+        - projectId
+        - name
+        - status
+        - createdAt
+        - updatedAt
       properties:
-        field:
+        projectId:
           type: string
-        issue:
+        name:
+          type: string
+        description:
+          type: string
+        ownerEmail:
+          type: string
+        status:
+          type: string
+          enum: [ACTIVE, ON_HOLD, COMPLETED, ARCHIVED]
+        createdAt:
+          type: string
+        updatedAt:
           type: string
 
-    ErrorInfo:
+    UpsertProjectRequest:
       type: object
       required:
-        - code
-        - message
-        - retryable
+        - projectId
+        - name
       properties:
-        code:
+        projectId:
           type: string
-        message:
+        name:
           type: string
-        retryable:
-          type: boolean
-        details:
-          type: array
-          items:
-            $ref: '#/components/schemas/ErrorDetail'
+        description:
+          type: string
+        ownerEmail:
+          type: string
+        status:
+          type: string
+          enum: [ACTIVE, ON_HOLD, COMPLETED, ARCHIVED]
 
-    ErrorResponse:
+    UpdateProjectRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        ownerEmail:
+          type: string
+        status:
+          type: string
+          enum: [ACTIVE, ON_HOLD, COMPLETED, ARCHIVED]
+
+    ProjectSingleResponse:
       type: object
       required:
         - success
         - statusCode
-        - error
+        - data
         - meta
       properties:
         success:
           type: boolean
-          enum: [false]
         statusCode:
           type: integer
-        error:
-          $ref: '#/components/schemas/ErrorInfo'
+        data:
+          $ref: '#/components/schemas/Project'
+        meta:
+          $ref: '#/components/schemas/Meta'
+
+    ProjectListResponse:
+      type: object
+      required:
+        - success
+        - statusCode
+        - data
+        - meta
+      properties:
+        success:
+          type: boolean
+        statusCode:
+          type: integer
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Project'
         meta:
           $ref: '#/components/schemas/Meta'
 
@@ -261,6 +477,9 @@ components:
         status:
           type: string
           enum: [PENDING, IN_PROGRESS, COMPLETED, CANCELLED]
+        priority:
+          type: string
+          enum: [LOW, MEDIUM, HIGH, CRITICAL]
         assignedToEmail:
           type: string
         dueDate:
@@ -285,6 +504,9 @@ components:
         status:
           type: string
           enum: [PENDING, IN_PROGRESS, COMPLETED, CANCELLED]
+        priority:
+          type: string
+          enum: [LOW, MEDIUM, HIGH, CRITICAL]
         assignedToEmail:
           type: string
         dueDate:
@@ -309,7 +531,6 @@ components:
       properties:
         success:
           type: boolean
-          enum: [true]
         statusCode:
           type: integer
         data:
@@ -327,7 +548,6 @@ components:
       properties:
         success:
           type: boolean
-          enum: [true]
         statusCode:
           type: integer
         data:
@@ -337,19 +557,40 @@ components:
         meta:
           $ref: '#/components/schemas/Meta'
 
-    SchedulerSweepData:
+    DeleteResponse:
       type: object
       required:
-        - scannedProjects
-        - pendingTasksFound
-        - emailsDispatched
+        - success
+        - statusCode
+        - data
+        - meta
       properties:
-        scannedProjects:
+        success:
+          type: boolean
+        statusCode:
           type: integer
-        pendingTasksFound:
+        data:
+          type: object
+        meta:
+          $ref: '#/components/schemas/Meta'
+
+    ErrorResponse:
+      type: object
+      required:
+        - success
+        - statusCode
+        - error
+        - meta
+      properties:
+        success:
+          type: boolean
+          enum: [false]
+        statusCode:
           type: integer
-        emailsDispatched:
-          type: integer
+        error:
+          type: object
+        meta:
+          $ref: '#/components/schemas/Meta'
 
     SchedulerSweepResponse:
       type: object
@@ -361,10 +602,9 @@ components:
       properties:
         success:
           type: boolean
-          enum: [true]
         statusCode:
           type: integer
         data:
-          $ref: '#/components/schemas/SchedulerSweepData'
+          type: object
         meta:
           $ref: '#/components/schemas/Meta'

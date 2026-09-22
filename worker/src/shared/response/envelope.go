@@ -1,6 +1,7 @@
 package response
 
 import (
+	"math"
 	"time"
 )
 
@@ -14,20 +15,34 @@ TOP-LEVEL ALGORITHM BLUEPRINT: RESPONSE ENVELOPE GENERATION
 2. Timestamp Standardization:
    - Generates millisecond-precision UTC RFC3339 timestamps terminating with literal 'Z'.
    - Complies with Section 13.1 of the API Request & Response Specification.
-3. Execution Time Calculation:
-   - Computes elapsed execution duration in milliseconds from the request start context.
+3. Pagination Compliance (Section 13.2):
+   - Generates PaginationMeta containing page, pageSize, totalItems, totalPages,
+     hasNextPage, hasPreviousPage, nextCursor.
+   - Provides PaginateSlice utility to deterministically slice in-memory collections.
 4. Response Assembly:
    - NewSuccessResponse: Instantiates an ApiResponse[T] with success=true and the supplied payload.
+   - NewPaginatedSuccessResponse: Instantiates an ApiResponse[T] including meta.pagination.
    - NewErrorResponse: Instantiates an ApiErrorResponse with success=false and standardized error taxonomy.
 */
 
+type PaginationMeta struct {
+	Page            *int    `json:"page"`
+	PageSize        int     `json:"pageSize"`
+	TotalItems      *int    `json:"totalItems"`
+	TotalPages      *int    `json:"totalPages"`
+	HasNextPage     bool    `json:"hasNextPage"`
+	HasPreviousPage bool    `json:"hasPreviousPage"`
+	NextCursor      *string `json:"nextCursor"`
+}
+
 type Meta struct {
-	RequestId       string `json:"requestId"`
-	CorrelationId   string `json:"correlationId"`
-	CausationId     string `json:"causationId,omitempty"`
-	Timestamp       string `json:"timestamp"`
-	ExecutionTimeMs int64  `json:"executionTimeMs"`
-	ApiVersion      string `json:"apiVersion"`
+	RequestId       string          `json:"requestId"`
+	CorrelationId   string          `json:"correlationId"`
+	CausationId     string          `json:"causationId,omitempty"`
+	Timestamp       string          `json:"timestamp"`
+	ExecutionTimeMs int64           `json:"executionTimeMs"`
+	ApiVersion      string          `json:"apiVersion"`
+	Pagination      *PaginationMeta `json:"pagination,omitempty"`
 }
 
 type ErrorDetail struct {
@@ -84,6 +99,16 @@ func NewSuccessResponse[T any](statusCode int, data T, meta Meta) ApiResponse[T]
 	}
 }
 
+func NewPaginatedSuccessResponse[T any](statusCode int, data T, meta Meta, pagination PaginationMeta) ApiResponse[T] {
+	meta.Pagination = &pagination
+	return ApiResponse[T]{
+		Success:    true,
+		StatusCode: statusCode,
+		Data:       data,
+		Meta:       meta,
+	}
+}
+
 func NewErrorResponse(statusCode int, code string, message string, retryable bool, details []ErrorDetail, meta Meta) ApiErrorResponse {
 	return ApiErrorResponse{
 		Success:    false,
@@ -96,4 +121,52 @@ func NewErrorResponse(statusCode int, code string, message string, retryable boo
 		},
 		Meta: meta,
 	}
+}
+
+func PaginateSlice[T any](items []T, page int, pageSize int) ([]T, PaginationMeta) {
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 10
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+
+	totalItems := len(items)
+	totalPages := int(math.Ceil(float64(totalItems) / float64(pageSize)))
+	if totalPages == 0 && totalItems == 0 {
+		totalPages = 0
+	}
+
+	startIndex := (page - 1) * pageSize
+	if startIndex > totalItems {
+		startIndex = totalItems
+	}
+
+	endIndex := startIndex + pageSize
+	if endIndex > totalItems {
+		endIndex = totalItems
+	}
+
+	sliced := items[startIndex:endIndex]
+	if sliced == nil {
+		sliced = []T{}
+	}
+
+	hasNextPage := page < totalPages
+	hasPreviousPage := page > 1 && totalPages > 0
+
+	pagination := PaginationMeta{
+		Page:            &page,
+		PageSize:        pageSize,
+		TotalItems:      &totalItems,
+		TotalPages:      &totalPages,
+		HasNextPage:     hasNextPage,
+		HasPreviousPage: hasPreviousPage,
+		NextCursor:      nil,
+	}
+
+	return sliced, pagination
 }

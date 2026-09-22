@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"time"
 
 	"planner/src/features/tasks/service"
@@ -21,12 +22,14 @@ TOP-LEVEL ALGORITHM BLUEPRINT: TASKS REST TRANSPORT HANDLER
    - Enforces closed, bounded JSON deserialization on request bodies.
 2. Standardized Envelope Serialization:
    - Encapsulates domain outcomes inside the mandatory ApiResponse[T] envelope (success: true, statusCode, data, meta).
+   - Returns paginated collection envelope with meta.pagination for ListTasks.
    - Maps errors directly to ApiErrorResponse (success: false, statusCode, error: {code, message, retryable}, meta).
 3. Handled Endpoints:
-   - UpsertTask: PUT/POST /api/v1/projects/{projectId}/tasks
-   - ListTasks: GET /api/v1/projects/{projectId}/tasks
+   - UpsertTask: POST /api/v1/projects/{projectId}/tasks
+   - ListTasks:  GET /api/v1/projects/{projectId}/tasks?page=1&pageSize=10&status=PENDING
    - GetTaskById: GET /api/v1/projects/{projectId}/tasks/{taskId}
    - UpdateTaskStatus: PATCH /api/v1/projects/{projectId}/tasks/{taskId}/status
+   - DeleteTask: DELETE /api/v1/projects/{projectId}/tasks/{taskId}
    - TriggerSchedulerSweep: POST /api/v1/scheduler/trigger
 */
 
@@ -82,6 +85,13 @@ func (h *TasksRestHandler) writeSuccess(w http.ResponseWriter, r *http.Request, 
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
+func (h *TasksRestHandler) writePaginatedSuccess(w http.ResponseWriter, r *http.Request, statusCode int, data any, pagination response.PaginationMeta) {
+	meta := h.extractMeta(r)
+	w.WriteHeader(statusCode)
+	resp := response.NewPaginatedSuccessResponse(statusCode, data, meta, pagination)
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
 func (h *TasksRestHandler) UpsertTask(w http.ResponseWriter, r *http.Request, projectId string) {
 	var input types.UpsertTaskInput
 	decoder := json.NewDecoder(r.Body)
@@ -104,13 +114,23 @@ func (h *TasksRestHandler) UpsertTask(w http.ResponseWriter, r *http.Request, pr
 
 func (h *TasksRestHandler) ListTasks(w http.ResponseWriter, r *http.Request, projectId string) {
 	statusFilter := r.URL.Query().Get("status")
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	if page < 1 {
+		page = 1
+	}
+	pageSize, _ := strconv.Atoi(r.URL.Query().Get("pageSize"))
+	if pageSize < 1 {
+		pageSize = 10
+	}
+
 	tasks, err := h.service.ListTasksByProject(r.Context(), projectId, statusFilter)
 	if err != nil {
 		h.writeError(w, r, err)
 		return
 	}
 
-	h.writeSuccess(w, r, http.StatusOK, tasks)
+	sliced, pagination := response.PaginateSlice(tasks, page, pageSize)
+	h.writePaginatedSuccess(w, r, http.StatusOK, sliced, pagination)
 }
 
 func (h *TasksRestHandler) GetTaskById(w http.ResponseWriter, r *http.Request, projectId string, taskId string) {
@@ -141,6 +161,20 @@ func (h *TasksRestHandler) UpdateTaskStatus(w http.ResponseWriter, r *http.Reque
 	}
 
 	h.writeSuccess(w, r, http.StatusOK, task)
+}
+
+func (h *TasksRestHandler) DeleteTask(w http.ResponseWriter, r *http.Request, projectId string, taskId string) {
+	err := h.service.DeleteTask(r.Context(), projectId, taskId)
+	if err != nil {
+		h.writeError(w, r, err)
+		return
+	}
+
+	h.writeSuccess(w, r, http.StatusOK, map[string]string{
+		"projectId": projectId,
+		"taskId":    taskId,
+		"deleted":   "true",
+	})
 }
 
 func (h *TasksRestHandler) TriggerSchedulerSweep(w http.ResponseWriter, r *http.Request) {

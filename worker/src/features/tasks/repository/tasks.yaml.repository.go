@@ -158,6 +158,9 @@ func (r *YamlTaskRepository) UpsertTask(ctx context.Context, projectId string, i
 		if input.Status != "" {
 			existing.Status = input.Status
 		}
+		if input.Priority != "" {
+			existing.Priority = input.Priority
+		}
 		if input.AssignedToEmail != "" {
 			existing.AssignedToEmail = input.AssignedToEmail
 		}
@@ -172,12 +175,18 @@ func (r *YamlTaskRepository) UpsertTask(ctx context.Context, projectId string, i
 		return existing, nil
 	}
 
+	priority := input.Priority
+	if priority == "" {
+		priority = types.PriorityMedium
+	}
+
 	newTask := types.Task{
 		TaskId:          input.TaskId,
 		ProjectId:       projectId,
 		Title:           input.Title,
 		Description:     input.Description,
 		Status:          status,
+		Priority:        priority,
 		AssignedToEmail: input.AssignedToEmail,
 		DueDate:         input.DueDate,
 		CreatedAt:       nowStr,
@@ -280,3 +289,31 @@ func (r *YamlTaskRepository) ListAllPendingTasks(ctx context.Context) (map[strin
 
 	return pendingMap, nil
 }
+
+func (r *YamlTaskRepository) DeleteTask(ctx context.Context, projectId string, taskId string) error {
+	lock := r.getProjectLock(projectId)
+	lock.Lock()
+	defer lock.Unlock()
+
+	file, err := r.readProjectFileUnsafe(projectId)
+	if err != nil {
+		return err
+	}
+
+	targetIndex := -1
+	for i, t := range file.Tasks {
+		if t.TaskId == taskId {
+			targetIndex = i
+			break
+		}
+	}
+
+	if targetIndex < 0 {
+		return errors.NewNotFoundError(fmt.Sprintf("task '%s' not found in project '%s'", taskId, projectId))
+	}
+
+	file.Tasks = append(file.Tasks[:targetIndex], file.Tasks[targetIndex+1:]...)
+
+	return r.writeProjectFileUnsafe(projectId, file)
+}
+

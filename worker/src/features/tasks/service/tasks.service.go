@@ -72,6 +72,13 @@ func (s *TasksService) UpsertTask(ctx context.Context, projectId string, input t
 		})
 	}
 
+	if input.Priority != "" && !input.Priority.IsValid() {
+		details = append(details, response.ErrorDetail{
+			Field: "priority",
+			Issue: "must be one of LOW, MEDIUM, HIGH, CRITICAL",
+		})
+	}
+
 	if len(details) > 0 {
 		return nil, errors.NewValidationError("Task validation failed", details)
 	}
@@ -127,9 +134,21 @@ func (s *TasksService) UpdateTaskStatus(ctx context.Context, projectId string, t
 		Title:           existing.Title,
 		Description:     existing.Description,
 		Status:          input.Status,
+		Priority:        existing.Priority,
 		AssignedToEmail: existing.AssignedToEmail,
 		DueDate:         existing.DueDate,
 	}
 
 	return s.repo.UpsertTask(ctx, projectId, upsertInput)
 }
+
+func (s *TasksService) DeleteTask(ctx context.Context, projectId string, taskId string) error {
+	projectId = strings.TrimSpace(projectId)
+	taskId = strings.TrimSpace(taskId)
+	if projectId == "" || taskId == "" {
+		return errors.NewBadRequestError("projectId and taskId are mandatory")
+	}
+
+	return s.repo.DeleteTask(ctx, projectId, taskId)
+}
+

@@ -5,6 +5,7 @@ TOP-LEVEL ALGORITHM BLUEPRINT: TASK DOMAIN TYPES & ENUMS
 =========================================================
 1. Domain Enum Validation:
    - Enforces valid task lifecycle states: PENDING, IN_PROGRESS, COMPLETED, CANCELLED.
+   - Enforces valid task priority ratings: LOW, MEDIUM, HIGH, CRITICAL.
    - Rejects unmapped or speculative state transitions.
 2. Serialization Mapping:
    - Provides dual tag bindings for JSON (REST transport) and YAML (database storage).
@@ -31,16 +32,35 @@ func (s TaskStatus) IsValid() bool {
 	}
 }
 
+type TaskPriority string
+
+const (
+	PriorityLow      TaskPriority = "LOW"
+	PriorityMedium   TaskPriority = "MEDIUM"
+	PriorityHigh     TaskPriority = "HIGH"
+	PriorityCritical TaskPriority = "CRITICAL"
+)
+
+func (p TaskPriority) IsValid() bool {
+	switch p {
+	case PriorityLow, PriorityMedium, PriorityHigh, PriorityCritical:
+		return true
+	default:
+		return false
+	}
+}
+
 type Task struct {
-	TaskId          string     `json:"taskId" yaml:"taskId"`
-	ProjectId       string     `json:"projectId" yaml:"projectId"`
-	Title           string     `json:"title" yaml:"title"`
-	Description     string     `json:"description" yaml:"description"`
-	Status          TaskStatus `json:"status" yaml:"status"`
-	AssignedToEmail string     `json:"assignedToEmail,omitempty" yaml:"assignedToEmail,omitempty"`
-	DueDate         string     `json:"dueDate,omitempty" yaml:"dueDate,omitempty"`
-	CreatedAt       string     `json:"createdAt" yaml:"createdAt"`
-	UpdatedAt       string     `json:"updatedAt" yaml:"updatedAt"`
+	TaskId          string       `json:"taskId" yaml:"taskId"`
+	ProjectId       string       `json:"projectId" yaml:"projectId"`
+	Title           string       `json:"title" yaml:"title"`
+	Description     string       `json:"description" yaml:"description"`
+	Status          TaskStatus   `json:"status" yaml:"status"`
+	Priority        TaskPriority `json:"priority,omitempty" yaml:"priority,omitempty"`
+	AssignedToEmail string       `json:"assignedToEmail,omitempty" yaml:"assignedToEmail,omitempty"`
+	DueDate         string       `json:"dueDate,omitempty" yaml:"dueDate,omitempty"`
+	CreatedAt       string       `json:"createdAt" yaml:"createdAt"`
+	UpdatedAt       string       `json:"updatedAt" yaml:"updatedAt"`
 }
 
 type ProjectTasksFile struct {
@@ -50,12 +70,13 @@ type ProjectTasksFile struct {
 }
 
 type UpsertTaskInput struct {
-	TaskId          string     `json:"taskId"`
-	Title           string     `json:"title"`
-	Description     string     `json:"description"`
-	Status          TaskStatus `json:"status"`
-	AssignedToEmail string     `json:"assignedToEmail"`
-	DueDate         string     `json:"dueDate"`
+	TaskId          string       `json:"taskId"`
+	Title           string       `json:"title"`
+	Description     string       `json:"description"`
+	Status          TaskStatus   `json:"status"`
+	Priority        TaskPriority `json:"priority"`
+	AssignedToEmail string       `json:"assignedToEmail"`
+	DueDate         string       `json:"dueDate"`
 }
 
 type UpdateTaskStatusInput struct {

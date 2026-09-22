@@ -12,8 +12,10 @@ import (
 
 	"planner/src/api/rest/v1/handlers"
 	"planner/src/api/rest/v1/router"
-	"planner/src/features/tasks/repository"
-	"planner/src/features/tasks/service"
+	projRepo "planner/src/features/projects/repository"
+	projSvc "planner/src/features/projects/service"
+	taskRepo "planner/src/features/tasks/repository"
+	taskSvc "planner/src/features/tasks/service"
 	"planner/src/infra/config"
 	"planner/src/infra/email"
 	"planner/src/infra/scheduler"
@@ -26,12 +28,12 @@ TOP-LEVEL ALGORITHM BLUEPRINT: HTTP SERVER & SCHEDULER BOOTSTRAPPER
 1. Configuration Ingestion:
    - Locates and parses `config/default.yaml` with environment variable overrides.
 2. Dependency Graph Construction:
-   - Instantiates YamlTaskRepository rooted in configured projects directory.
-   - Instantiates pure domain TasksService with injected repository port.
+   - Instantiates YamlProjectRepository and YamlTaskRepository rooted in configured projects directory.
+   - Instantiates domain ProjectsService and TasksService with injected repository ports.
    - Instantiates SmtpEmailAdapter configured for logger or SMTP dispatch.
-   - Instantiates DailySchedulerEngine wired to repository and email ports.
+   - Instantiates DailySchedulerEngine wired to task repository and email ports.
    - Instantiates IdempotencyStore for duplicate mutation suppression.
-   - Instantiates TasksRestHandler and TasksRouter.
+   - Instantiates ProjectsRestHandler, TasksRestHandler and TasksRouter.
 3. Subsystem Lifecycle & Graceful Termination:
    - Spawns DailySchedulerEngine background ticker if enabled.
    - Launches HTTP server with explicit timeout protections.
@@ -53,12 +55,18 @@ func main() {
 		log.Fatalf("[FATAL] Failed to load configuration: %v", err)
 	}
 
-	repo, err := repository.NewYamlTaskRepository(cfg.Storage.ProjectsDirectory)
+	taskRepository, err := taskRepo.NewYamlTaskRepository(cfg.Storage.ProjectsDirectory)
 	if err != nil {
-		log.Fatalf("[FATAL] Failed to initialize YAML repository: %v", err)
+		log.Fatalf("[FATAL] Failed to initialize YAML task repository: %v", err)
 	}
 
-	taskService := service.NewTasksService(repo)
+	projectRepository, err := projRepo.NewYamlProjectRepository(cfg.Storage.ProjectsDirectory)
+	if err != nil {
+		log.Fatalf("[FATAL] Failed to initialize YAML project repository: %v", err)
+	}
+
+	taskService := taskSvc.NewTasksService(taskRepository)
+	projectService := projSvc.NewProjectsService(projectRepository)
 
 	smtpConf := email.SmtpConfig{
 		Host:     cfg.Email.Smtp.Host,
@@ -69,7 +77,7 @@ func main() {
 	emailAdapter := email.NewSmtpEmailAdapter(cfg.Email.Mode, cfg.Email.FromAddress, smtpConf)
 
 	sched := scheduler.NewDailySchedulerEngine(
-		repo,
+		taskRepository,
 		emailAdapter,
 		cfg.Scheduler.IntervalMinutes,
 		"team@planner.internal",
@@ -88,8 +96,10 @@ func main() {
 	}
 
 	idempotencyStore := middleware.NewIdempotencyStore()
-	restHandler := handlers.NewTasksRestHandler(taskService, sched)
-	tasksRouter := router.NewTasksRouter(restHandler, idempotencyStore, cfg.Server.ApiVersion)
+	tasksHandler := handlers.NewTasksRestHandler(taskService, sched)
+	projectsHandler := handlers.NewProjectsRestHandler(projectService)
+
+	tasksRouter := router.NewTasksRouter(tasksHandler, projectsHandler, idempotencyStore, cfg.Server.ApiVersion)
 	httpHandler := tasksRouter.SetupRoutes()
 
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
