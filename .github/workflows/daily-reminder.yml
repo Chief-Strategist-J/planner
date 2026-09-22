@@ -2,8 +2,8 @@ name: Daily Task Reminder & Scheduler Sweep
 
 on:
   schedule:
-    # 09:00 AM IST (Indian Standard Time / Bengaluru) = 03:30 UTC
-    - cron: '30 3 * * *'
+    # 10:00 AM IST (Indian Standard Time / Bengaluru) = 04:30 UTC
+    - cron: '30 4 * * *'
   workflow_dispatch:
     inputs:
       trigger_cloud_run:
