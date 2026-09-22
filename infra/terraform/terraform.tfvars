@@ -1,0 +1,11 @@
+project_id           = "planner-app-66733"
+region               = "asia-south1"
+zone                 = "asia-south1-a"
+service_name         = "planner-service"
+artifact_repo_name   = "planner-repo"
+service_account_name = "planner-runner"
+container_image      = "asia-south1-docker.pkg.dev/planner-app-66733/planner-repo/planner-worker:v1"
+min_instances        = 0
+max_instances        = 1
+cpu_limit            = "1"
+memory_limit         = "512Mi"
