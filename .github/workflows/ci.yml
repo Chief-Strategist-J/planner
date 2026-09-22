@@ -1,3 +1,18 @@
+# ==============================================================================
+# TOP-LEVEL ALGORITHM BLUEPRINT: CONTINUOUS INTEGRATION PIPELINE
+# ==============================================================================
+# 1. Event Triggers:
+#    - Activates on code push or pull request to the main branch.
+# 2. Environment Provisioning:
+#    - Checks out repository source code.
+#    - Configures Go 1.23 environment with dependency caching.
+# 3. Unit & Integration Test Execution:
+#    - Executes complete Go test suite across all feature packages and repositories.
+# 4. Infrastructure Configuration Validation:
+#    - Sets up Terraform CLI.
+#    - Initializes providers without remote backend.
+#    - Validates declarative HCL syntax and schema consistency.
+# ==============================================================================
 name: CI Pipeline
 
 on:
