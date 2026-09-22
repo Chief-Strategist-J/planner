@@ -1,8 +1,20 @@
+# ==============================================================================
+# TOP-LEVEL ALGORITHM BLUEPRINT: DAILY TASK REMINDER & SCHEDULER SWEEP
+# ==============================================================================
+# 1. Trigger Matrix:
+#    - Scheduled via cron at 04:30 UTC (10:00 AM IST), daily.
+#    - Supports manual execution via workflow dispatch.
+# 2. Remote Trigger Phase:
+#    - Issues HTTP POST request to Cloud Run scheduler endpoint (/api/v1/scheduler/trigger).
+#    - Parses JSON response to extract scanned projects, pending tasks, and dispatched email counts.
+# 3. Reporting & Audit Phase:
+#    - Queries projects and pending tasks endpoints via REST API.
+#    - Formats and writes detailed Markdown summary table to GitHub Step Summary.
+# ==============================================================================
 name: Daily Task Reminder & Scheduler Sweep
 
 on:
   schedule:
-    # 10:00 AM IST (Indian Standard Time / Bengaluru) = 04:30 UTC
     - cron: '30 4 * * *'
   workflow_dispatch:
 
@@ -21,7 +33,6 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # 1. Trigger Live Cloud Run Sweep via REST API
       - name: Trigger Live Cloud Run Sweep Engine
         id: trigger_sweep
         run: |
@@ -51,7 +62,6 @@ jobs:
           echo "pending_tasks=$PENDING_TASKS" >> $GITHUB_OUTPUT
           echo "emails_sent=$EMAILS_SENT" >> $GITHUB_OUTPUT
 
-      # 2. Query Live REST API to Build Rich Markdown Summary for GitHub
       - name: Query Live Projects & Format Step Summary
         run: |
           echo "# 📋 Daily Task Reminder Summary" >> $GITHUB_STEP_SUMMARY
