@@ -17,3 +17,8 @@ output "firestore_database_name" {
   description = "The Google Cloud Firestore Native Database name"
   value       = google_firestore_database.database.name
 }
+
+output "gemma_service_url" {
+  description = "The publicly accessible URL of the Gemma 2B LLM Cloud Run service"
+  value       = google_cloud_run_v2_service.gemma_service.uri
+}
