@@ -17,6 +17,10 @@ class AppColors {
   
   static const Color border = Color(0xFFE2E8F0);
   static const Color divider = Color(0xFFF1F5F9);
+  static const Color inputBackground = Color(0xFFF1F5F9);
+  static const Color inputBorder = Color(0xFFCBD5E1);
+  static const Color primarySubtle = Color(0xFFEFF6FF);
+  static const Color surfaceSubtle = Color(0xFFF8FAFC);
   
   static const Color success = Color(0xFF10B981);
   static const Color warning = Color(0xFFF59E0B);

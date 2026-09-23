@@ -61,7 +61,7 @@ class TasksBloc extends Bloc<TasksEvent, TasksState> {
         AppEndpoints.projectTasks(event.task.projectId),
         data: event.task.toJson(),
       );
-      if (response.statusCode == 200) {
+      if (response.statusCode == 200 || response.statusCode == 201) {
         add(FetchTasksEvent(projectId: event.task.projectId));
       } else {
         emit(const TasksErrorState('Failed to save task'));
@@ -83,7 +83,7 @@ class TasksBloc extends Bloc<TasksEvent, TasksState> {
         AppEndpoints.taskStatus(event.projectId, event.taskId),
         data: {'status': event.newStatus.value},
       );
-      if (response.statusCode == 200) {
+      if (response.statusCode == 200 || response.statusCode == 204) {
         add(FetchTasksEvent(projectId: event.projectId));
       } else {
         emit(const TasksErrorState('Failed to update task status'));
@@ -104,7 +104,7 @@ class TasksBloc extends Bloc<TasksEvent, TasksState> {
       final response = await _apiClient.dio.delete(
         AppEndpoints.taskById(event.projectId, event.taskId),
       );
-      if (response.statusCode == 200) {
+      if (response.statusCode == 200 || response.statusCode == 204) {
         add(FetchTasksEvent(projectId: event.projectId));
       } else {
         emit(const TasksErrorState('Failed to delete task'));

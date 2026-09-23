@@ -25,9 +25,9 @@ class SchedulerScreen extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             _buildScheduleInfoCard(),
-            const SizedBox(height: 20),
+            const SizedBox(height: 16),
             _buildTriggerCard(context),
-            const SizedBox(height: 20),
+            const SizedBox(height: 16),
             _buildExecutionResult(context),
           ],
         ),
@@ -56,25 +56,46 @@ class SchedulerScreen extends StatelessWidget {
                     color: AppColors.primaryLight.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: const Icon(Icons.access_time_filled, color: AppColors.primaryLight),
+                  child: const Icon(Icons.access_time_filled_rounded, color: AppColors.primaryLight),
                 ),
                 const SizedBox(width: 12),
-                const Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Daily Reminder Schedule',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.textPrimary,
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Daily Reminder Schedule',
+                        style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.textPrimary,
+                        ),
                       ),
-                    ),
-                    Text(
-                      'Automated Cloud Schedule',
-                      style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
-                    ),
-                  ],
+                      Text(
+                        'Cloud Scheduler Cron (0 4 * * *)',
+                        style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: AppColors.success.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: AppColors.success.withValues(alpha: 0.4)),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.circle, color: AppColors.success, size: 7),
+                      SizedBox(width: 5),
+                      Text(
+                        'ENABLED',
+                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.success),
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -87,7 +108,7 @@ class SchedulerScreen extends StatelessWidget {
             const SizedBox(height: 8),
             _infoRow('Cloud Storage Sync:', 'gs://planner-app-66733-data (Persistent)'),
             const SizedBox(height: 8),
-            _infoRow('Email Dispatch Mode:', 'SMTP Authenticated TLS'),
+            _infoRow('Email Dispatch Mode:', 'SMTP Authenticated TLS (Port 587)'),
           ],
         ),
       ),
@@ -137,18 +158,24 @@ class SchedulerScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'On-Demand Sweep Trigger',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: AppColors.textPrimary,
-              ),
+            const Row(
+              children: [
+                Icon(Icons.flash_on_rounded, color: AppColors.accent, size: 20),
+                SizedBox(width: 8),
+                Text(
+                  'On-Demand Sweep Trigger',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 6),
             const Text(
-              'Manually trigger the Cloud Run task scheduler right now to scan pending tasks and send reminder digest emails.',
-              style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
+              'Manually trigger the Cloud Run task scheduler right now to scan pending tasks across all projects and dispatch email digests.',
+              style: TextStyle(fontSize: 13, color: AppColors.textSecondary, height: 1.3),
             ),
             const SizedBox(height: 16),
             BlocBuilder<SchedulerBloc, SchedulerState>(
@@ -177,7 +204,7 @@ class SchedulerScreen extends StatelessWidget {
                           )
                         : const Icon(Icons.send_rounded),
                     label: Text(
-                      isRunning ? 'Executing Sweep...' : 'Trigger Scheduler Sweep Now',
+                      isRunning ? 'Executing Cloud Sweep...' : 'Trigger Scheduler Sweep Now',
                       style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
                     ),
                     onPressed: isRunning
@@ -201,8 +228,16 @@ class SchedulerScreen extends StatelessWidget {
         if (state is SchedulerErrorState) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(state.errorMessage),
+              content: Row(
+                children: [
+                  const Icon(Icons.error_outline, color: AppColors.textOnPrimary),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(state.errorMessage)),
+                ],
+              ),
               backgroundColor: AppColors.error,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             ),
           );
         }
@@ -223,10 +258,10 @@ class SchedulerScreen extends StatelessWidget {
               children: [
                 const Row(
                   children: [
-                    Icon(Icons.check_circle, color: AppColors.success, size: 24),
+                    Icon(Icons.check_circle_rounded, color: AppColors.success, size: 24),
                     SizedBox(width: 8),
                     Text(
-                      'Sweep Completed Successfully',
+                      'Sweep Executed Successfully',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
@@ -242,7 +277,7 @@ class SchedulerScreen extends StatelessWidget {
                     const SizedBox(width: 12),
                     _metricBox('Pending Tasks', '${res.pendingTasksFound}', AppColors.warning),
                     const SizedBox(width: 12),
-                    _metricBox('Emails Sent', '${res.emailsDispatched}', AppColors.success),
+                    _metricBox('Emails Dispatched', '${res.emailsDispatched}', AppColors.success),
                   ],
                 ),
               ],
