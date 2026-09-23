@@ -169,31 +169,42 @@ func (r *FirestoreTaskRepository) ListTasksByProject(ctx context.Context, projec
 }
 
 func (r *FirestoreTaskRepository) ListAllPendingTasks(ctx context.Context) (map[string][]types.Task, error) {
-	q := r.client.CollectionGroup("tasks").Where("status", "==", string(types.StatusPending))
-	iter := q.Documents(ctx)
-	defer iter.Stop()
+	projIter := r.client.Collection("projects").Documents(ctx)
+	defer projIter.Stop()
 
 	pendingMap := make(map[string][]types.Task)
 	for {
-		doc, err := iter.Next()
+		pDoc, err := projIter.Next()
 		if err == iterator.Done {
 			break
 		}
 		if err != nil {
-			return nil, errors.NewInternalServerError(fmt.Sprintf("failed to scan pending tasks in firestore: %v", err))
+			return nil, errors.NewInternalServerError(fmt.Sprintf("failed to list projects during pending tasks sweep: %v", err))
 		}
 
-		var t types.Task
-		if err := doc.DataTo(&t); err != nil {
-			continue
+		projectId := pDoc.Ref.ID
+		tasksIter := pDoc.Ref.Collection("tasks").Where("status", "==", string(types.StatusPending)).Documents(ctx)
+		var pendingList []types.Task
+		for {
+			tDoc, err := tasksIter.Next()
+			if err == iterator.Done {
+				break
+			}
+			if err != nil {
+				tasksIter.Stop()
+				return nil, errors.NewInternalServerError(fmt.Sprintf("failed to list tasks for project '%s': %v", projectId, err))
+			}
+			var t types.Task
+			if err := tDoc.DataTo(&t); err == nil {
+				t.TaskId = tDoc.Ref.ID
+				t.ProjectId = projectId
+				pendingList = append(pendingList, t)
+			}
 		}
-		t.TaskId = doc.Ref.ID
-		if t.ProjectId == "" && doc.Ref.Parent != nil && doc.Ref.Parent.Parent != nil {
-			t.ProjectId = doc.Ref.Parent.Parent.ID
-		}
+		tasksIter.Stop()
 
-		if t.ProjectId != "" {
-			pendingMap[t.ProjectId] = append(pendingMap[t.ProjectId], t)
+		if len(pendingList) > 0 {
+			pendingMap[projectId] = pendingList
 		}
 	}
 

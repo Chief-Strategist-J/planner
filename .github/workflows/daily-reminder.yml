@@ -15,7 +15,7 @@ name: Daily Task Reminder & Scheduler Sweep
 
 on:
   schedule:
-    - cron: '30 4 * * *'
+    - cron: '22 4 * * *'
   workflow_dispatch:
 
 permissions:
