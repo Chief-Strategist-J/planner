@@ -61,57 +61,19 @@ gcloud services enable \
   secretmanager.googleapis.com \
   logging.googleapis.com \
   monitoring.googleapis.com \
-  compute.googleapis.com
+  firestore.googleapis.com
 
-if gcloud artifacts repositories describe "${ARTIFACT_REPO_NAME}" --location="${REGION}" >/dev/null 2>&1; then
-  echo "[INFO] Artifact Registry ${ARTIFACT_REPO_NAME} already exists."
-else
-  echo "[INFO] Creating Artifact Registry repository ${ARTIFACT_REPO_NAME}..."
-  gcloud artifacts repositories create "${ARTIFACT_REPO_NAME}" \
-    --repository-format=docker \
-    --location="${REGION}" \
-    --description="Docker repository for Planner app"
-fi
-
-SA_EMAIL="${SERVICE_ACCOUNT_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
-if gcloud iam service-accounts describe "${SA_EMAIL}" >/dev/null 2>&1; then
-  echo "[INFO] Service account ${SA_EMAIL} already exists."
-else
-  echo "[INFO] Creating service account ${SERVICE_ACCOUNT_NAME}..."
-  gcloud iam service-accounts create "${SERVICE_ACCOUNT_NAME}" \
-    --display-name="Planner Cloud Run Runner"
-  sleep 3
-fi
-
-echo "[INFO] Applying IAM policies to ${SA_EMAIL}..."
+echo "[INFO] Granting datastore.user role to ${SA_EMAIL} for Cloud Firestore..."
 gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
   --member="serviceAccount:${SA_EMAIL}" \
-  --role="roles/logging.logWriter" --condition=None
+  --role="roles/datastore.user" --condition=None
 
-gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
-  --member="serviceAccount:${SA_EMAIL}" \
-  --role="roles/monitoring.metricWriter" --condition=None
-
-gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
-  --member="serviceAccount:${SA_EMAIL}" \
-  --role="roles/secretmanager.secretAccessor" --condition=None
-
-# 7. Persistent Cloud Storage Bucket (Free-Tier Safe: 5GB monthly free)
-BUCKET_NAME="${BUCKET_NAME:-${PROJECT_ID}-data}"
-if gcloud storage buckets describe "gs://${BUCKET_NAME}" >/dev/null 2>&1; then
-  echo "[INFO] Cloud Storage bucket gs://${BUCKET_NAME} already exists."
+if gcloud firestore databases describe --database="(default)" >/dev/null 2>&1; then
+  echo "[INFO] Firestore database (default) already exists."
 else
-  echo "[INFO] Creating Cloud Storage bucket gs://${BUCKET_NAME}..."
-  gcloud storage buckets create "gs://${BUCKET_NAME}" \
-    --project="${PROJECT_ID}" \
-    --location="${REGION}" \
-    --uniform-bucket-level-access
+  echo "[INFO] Provisioning Firestore database (default) in Native Mode..."
+  gcloud firestore databases create --location="${REGION}" --type=firestore-native || true
 fi
-
-echo "[INFO] Granting storage objectAdmin to ${SA_EMAIL}..."
-gcloud storage buckets add-iam-policy-binding "gs://${BUCKET_NAME}" \
-  --member="serviceAccount:${SA_EMAIL}" \
-  --role="roles/storage.objectAdmin"
 
 PROJECT_NUM=$(gcloud projects describe "${PROJECT_ID}" --format="value(projectNumber)")
 gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
@@ -121,6 +83,6 @@ gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
 echo "=========================================================="
 echo "GCP Setup Completed Successfully!"
 echo "Artifact Repository: ${REGION}-docker.pkg.dev/${PROJECT_ID}/${ARTIFACT_REPO_NAME}"
-echo "Storage Bucket:      gs://${BUCKET_NAME}"
+echo "Firestore Database:  (default) [Native Mode]"
 echo "Service Account:     ${SA_EMAIL}"
 echo "=========================================================="

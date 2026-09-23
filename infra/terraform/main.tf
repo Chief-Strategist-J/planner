@@ -24,7 +24,8 @@ locals {
     "secretmanager.googleapis.com",
     "logging.googleapis.com",
     "monitoring.googleapis.com",
-    "compute.googleapis.com"
+    "compute.googleapis.com",
+    "firestore.googleapis.com"
   ]
 }
 
@@ -73,30 +74,32 @@ resource "google_project_iam_member" "sa_secretmanager" {
   member  = "serviceAccount:${google_service_account.cloud_run_sa.email}"
 }
 
-# 5. Persistent Google Cloud Storage Bucket (5GB Monthly Free Tier)
-resource "google_storage_bucket" "data_bucket" {
-  depends_on                  = [google_project_service.enabled_apis]
-  name                        = var.gcs_bucket_name
-  location                    = var.region
-  project                     = var.project_id
-  force_destroy               = false
-  uniform_bucket_level_access = true
+# 4b. IAM Role Binding for Cloud Firestore (Native NoSQL Datastore)
+resource "google_project_iam_member" "sa_firestore" {
+  project = var.project_id
+  role    = "roles/datastore.user"
+  member  = "serviceAccount:${google_service_account.cloud_run_sa.email}"
 }
 
-resource "google_storage_bucket_iam_member" "sa_storage_admin" {
-  bucket = google_storage_bucket.data_bucket.name
-  role   = "roles/storage.objectAdmin"
-  member = "serviceAccount:${google_service_account.cloud_run_sa.email}"
+# 4c. Cloud Firestore Database (Native Mode)
+resource "google_firestore_database" "database" {
+  depends_on              = [google_project_service.enabled_apis]
+  project                 = var.project_id
+  name                    = "(default)"
+  location_id             = var.region
+  type                    = "FIRESTORE_NATIVE"
+  delete_protection_state = "DELETE_PROTECTION_DISABLED"
+  deletion_policy         = "DELETE"
 }
 
-# 6. Cloud Run v2 Service (Free Tier Enforced with Persistent GCS Volume)
+# 5. Cloud Run v2 Service (Free Tier Enforced with Firestore Backend)
 resource "google_cloud_run_v2_service" "planner_service" {
   depends_on = [
     google_project_service.enabled_apis,
     google_service_account.cloud_run_sa,
     google_artifact_registry_repository.docker_repo,
-    google_storage_bucket.data_bucket,
-    google_storage_bucket_iam_member.sa_storage_admin
+    google_project_iam_member.sa_firestore,
+    google_firestore_database.database
   ]
 
   name     = var.service_name
@@ -128,25 +131,24 @@ resource "google_cloud_run_v2_service" "planner_service" {
       }
 
       env {
+        name  = "STORAGE_TYPE"
+        value = "firestore"
+      }
+      env {
+        name  = "GCP_PROJECT_ID"
+        value = var.project_id
+      }
+      env {
+        name  = "FIRESTORE_DATABASE"
+        value = "(default)"
+      }
+      env {
         name  = "PROJECTS_DIR"
         value = "/app/projects"
       }
       env {
         name  = "CONFIG_PATH"
         value = "/app/config/default.yaml"
-      }
-
-      volume_mounts {
-        name       = "planner-data"
-        mount_path = "/app/projects"
-      }
-    }
-
-    volumes {
-      name = "planner-data"
-      gcs {
-        bucket    = google_storage_bucket.data_bucket.name
-        read_only = false
       }
     }
   }

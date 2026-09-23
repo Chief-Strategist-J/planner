@@ -3,7 +3,10 @@ server:
   apiVersion: "v1"
 
 storage:
+  type: "firestore"
   projectsDirectory: "./projects"
+  gcpProjectId: "planner-app-66733"
+  firestoreDatabase: "(default)"
 
 scheduler:
   enabled: true

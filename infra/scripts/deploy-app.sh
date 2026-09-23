@@ -48,9 +48,7 @@ gcloud run deploy "${SERVICE_NAME}" \
   --project="${PROJECT_ID}" \
   --image="${IMAGE_URI}" \
   --region="${REGION}" \
-  --service-account="${SERVICE_ACCOUNT}" \
-  --add-volume=name=planner-data,type=cloud-storage,bucket="${PROJECT_ID}-data" \
-  --add-volume-mount=volume=planner-data,mount-path=/app/projects \
+  --set-env-vars="STORAGE_TYPE=firestore,GCP_PROJECT_ID=${PROJECT_ID},FIRESTORE_DATABASE=(default)" \
   --min-instances=0 \
   --max-instances=1 \
   --cpu=1 \

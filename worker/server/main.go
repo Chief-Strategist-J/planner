@@ -11,6 +11,8 @@ import (
 	"syscall"
 	"time"
 
+	"cloud.google.com/go/firestore"
+
 	"planner/src/api/rest/v1/handlers"
 	"planner/src/api/rest/v1/router"
 	projRepo "planner/src/features/projects/repository"
@@ -57,14 +59,56 @@ func main() {
 		log.Fatalf("[FATAL] Failed to load configuration: %v", err)
 	}
 
-	taskRepository, err := taskRepo.NewYamlTaskRepository(cfg.Storage.ProjectsDirectory)
-	if err != nil {
-		log.Fatalf("[FATAL] Failed to initialize YAML task repository: %v", err)
-	}
+	var taskRepository taskRepo.TaskRepositoryPort
+	var projectRepository projRepo.ProjectRepositoryPort
 
-	projectRepository, err := projRepo.NewYamlProjectRepository(cfg.Storage.ProjectsDirectory)
-	if err != nil {
-		log.Fatalf("[FATAL] Failed to initialize YAML project repository: %v", err)
+	if cfg.Storage.Type == "firestore" {
+		ctx := context.Background()
+		projectID := cfg.Storage.GcpProjectId
+		if projectID == "" {
+			projectID = os.Getenv("GOOGLE_CLOUD_PROJECT")
+		}
+		if projectID == "" {
+			projectID = "planner-app-66733"
+		}
+
+		var fsClient *firestore.Client
+		var fsErr error
+		if cfg.Storage.FirestoreDatabase != "" && cfg.Storage.FirestoreDatabase != "(default)" {
+			fsClient, fsErr = firestore.NewClientWithDatabase(ctx, projectID, cfg.Storage.FirestoreDatabase)
+		} else {
+			fsClient, fsErr = firestore.NewClient(ctx, projectID)
+		}
+
+		if fsErr != nil {
+			log.Printf("[WARN] Failed to initialize Firestore client: %v. Falling back to YAML storage.", fsErr)
+			taskRepoImpl, err := taskRepo.NewYamlTaskRepository(cfg.Storage.ProjectsDirectory)
+			if err != nil {
+				log.Fatalf("[FATAL] Failed to initialize fallback YAML task repository: %v", err)
+			}
+			projRepoImpl, err := projRepo.NewYamlProjectRepository(cfg.Storage.ProjectsDirectory)
+			if err != nil {
+				log.Fatalf("[FATAL] Failed to initialize fallback YAML project repository: %v", err)
+			}
+			taskRepository = taskRepoImpl
+			projectRepository = projRepoImpl
+		} else {
+			log.Printf("[INFO] Initialized Google Cloud Firestore repository for project '%s'", projectID)
+			taskRepository = taskRepo.NewFirestoreTaskRepository(fsClient)
+			projectRepository = projRepo.NewFirestoreProjectRepository(fsClient)
+			defer fsClient.Close()
+		}
+	} else {
+		taskRepoImpl, err := taskRepo.NewYamlTaskRepository(cfg.Storage.ProjectsDirectory)
+		if err != nil {
+			log.Fatalf("[FATAL] Failed to initialize YAML task repository: %v", err)
+		}
+		projRepoImpl, err := projRepo.NewYamlProjectRepository(cfg.Storage.ProjectsDirectory)
+		if err != nil {
+			log.Fatalf("[FATAL] Failed to initialize YAML project repository: %v", err)
+		}
+		taskRepository = taskRepoImpl
+		projectRepository = projRepoImpl
 	}
 
 	taskService := taskSvc.NewTasksService(taskRepository)

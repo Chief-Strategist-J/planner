@@ -64,8 +64,3 @@ variable "memory_limit" {
   default     = "512Mi"
 }
 
-variable "gcs_bucket_name" {
-  description = "Name of the Google Cloud Storage bucket for persistent task data"
-  type        = string
-  default     = "planner-app-66733-data"
-}

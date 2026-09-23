@@ -25,7 +25,10 @@ type ServerConfig struct {
 }
 
 type StorageConfig struct {
+	Type              string `yaml:"type"`
 	ProjectsDirectory string `yaml:"projectsDirectory"`
+	GcpProjectId      string `yaml:"gcpProjectId"`
+	FirestoreDatabase string `yaml:"firestoreDatabase"`
 }
 
 type SchedulerConfig struct {
@@ -61,7 +64,10 @@ func LoadConfig(configPath string) (*AppConfig, error) {
 			ApiVersion: "v1",
 		},
 		Storage: StorageConfig{
+			Type:              "yaml",
 			ProjectsDirectory: "./projects",
+			GcpProjectId:      "planner-app-66733",
+			FirestoreDatabase: "(default)",
 		},
 		Scheduler: SchedulerConfig{
 			Enabled:         true,
@@ -87,8 +93,20 @@ func LoadConfig(configPath string) (*AppConfig, error) {
 		}
 	}
 
+	if storageType := os.Getenv("STORAGE_TYPE"); storageType != "" {
+		cfg.Storage.Type = storageType
+	}
+
 	if projectsDir := os.Getenv("PROJECTS_DIR"); projectsDir != "" {
 		cfg.Storage.ProjectsDirectory = projectsDir
+	}
+
+	if gcpProjectId := os.Getenv("GCP_PROJECT_ID"); gcpProjectId != "" {
+		cfg.Storage.GcpProjectId = gcpProjectId
+	}
+
+	if firestoreDb := os.Getenv("FIRESTORE_DATABASE"); firestoreDb != "" {
+		cfg.Storage.FirestoreDatabase = firestoreDb
 	}
 
 	if emailMode := os.Getenv("EMAIL_MODE"); emailMode != "" {

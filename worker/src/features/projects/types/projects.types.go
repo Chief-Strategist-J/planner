@@ -32,13 +32,13 @@ func (s ProjectStatus) IsValid() bool {
 }
 
 type Project struct {
-	ProjectId   string        `json:"projectId" yaml:"projectId"`
-	Name        string        `json:"name" yaml:"name"`
-	Description string        `json:"description" yaml:"description"`
-	OwnerEmail  string        `json:"ownerEmail,omitempty" yaml:"ownerEmail,omitempty"`
-	Status      ProjectStatus `json:"status" yaml:"status"`
-	CreatedAt   string        `json:"createdAt" yaml:"createdAt"`
-	UpdatedAt   string        `json:"updatedAt" yaml:"updatedAt"`
+	ProjectId   string        `json:"projectId" yaml:"projectId" firestore:"projectId"`
+	Name        string        `json:"name" yaml:"name" firestore:"name"`
+	Description string        `json:"description" yaml:"description" firestore:"description"`
+	OwnerEmail  string        `json:"ownerEmail,omitempty" yaml:"ownerEmail,omitempty" firestore:"ownerEmail,omitempty"`
+	Status      ProjectStatus `json:"status" yaml:"status" firestore:"status"`
+	CreatedAt   string        `json:"createdAt" yaml:"createdAt" firestore:"createdAt"`
+	UpdatedAt   string        `json:"updatedAt" yaml:"updatedAt" firestore:"updatedAt"`
 }
 
 type UpsertProjectInput struct {
