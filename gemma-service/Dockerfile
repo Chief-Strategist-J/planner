@@ -14,8 +14,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 RUN mkdir -p /app/models
 
-# Download Google Gemma 1.1 2B Instruct GGUF model file
-RUN curl -L -o /app/models/gemma-2-2b-it-Q4_K_M.gguf "https://huggingface.co/google/gemma-1.1-2b-it-GGUF/resolve/main/2b_it_v1p1.gguf"
+# Download Google Gemma 2 2B Instruct GGUF model file (public un-gated repository)
+RUN curl -L -o /app/models/gemma-2-2b-it-Q4_K_M.gguf "https://huggingface.co/bartowski/gemma-2-2b-it-GGUF/resolve/main/gemma-2-2b-it-Q4_K_M.gguf"
 
 COPY app.py .
 
