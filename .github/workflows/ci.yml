@@ -3,9 +3,10 @@
 # ==============================================================================
 # 1. Event Triggers:
 #    - Activates on code push or pull request to the main branch.
+#    - Supports manual execution via workflow_dispatch.
 # 2. Environment Provisioning:
 #    - Checks out repository source code.
-#    - Configures Go 1.23 environment with dependency caching.
+#    - Configures Go 1.25 environment with dependency caching.
 # 3. Unit & Integration Test Execution:
 #    - Executes complete Go test suite across all feature packages and repositories.
 # 4. Infrastructure Configuration Validation:
@@ -20,6 +21,7 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -47,7 +49,8 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: "1.16.3"
+          terraform_version: "1.16.4"
+          terraform_wrapper: false
 
       - name: Validate Terraform Configuration
         run: |

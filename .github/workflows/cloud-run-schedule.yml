@@ -65,7 +65,7 @@ jobs:
             elif [[ "$SELECTED_ACTION" == *"STOP"* ]]; then
               echo "action=STOP" >> $GITHUB_OUTPUT
             else
-              CURRENT_HOUR=$(date -u +%H)
+              CURRENT_HOUR=$(date -u +%-H)
               if [ "$CURRENT_HOUR" -lt 12 ]; then
                 echo "action=START" >> $GITHUB_OUTPUT
               else
@@ -73,7 +73,7 @@ jobs:
               fi
             fi
           else
-            CURRENT_HOUR=$(10#$(date -u +%H))
+            CURRENT_HOUR=$(date -u +%-H)
             if [ "$CURRENT_HOUR" -ge 2 ] && [ "$CURRENT_HOUR" -le 11 ]; then
               echo "action=START" >> $GITHUB_OUTPUT
             else
@@ -104,7 +104,9 @@ jobs:
           
           ENV_VARS="STORAGE_TYPE=firestore,GCP_PROJECT_ID=${PROJECT_ID},FIRESTORE_DATABASE=(default),PROJECTS_DIR=/app/projects,CONFIG_PATH=/app/config/default.yaml"
           if [ -n "${{ secrets.SMTP_HOST }}" ]; then
-            ENV_VARS="${ENV_VARS},EMAIL_MODE=smtp,SMTP_HOST=${{ secrets.SMTP_HOST }},SMTP_PORT=${{ secrets.SMTP_PORT || '587' }},SMTP_USERNAME=${{ secrets.SMTP_USERNAME }},SMTP_PASSWORD=${{ secrets.SMTP_PASSWORD }}"
+            SMTP_PORT="${{ secrets.SMTP_PORT }}"
+            SMTP_PORT="${SMTP_PORT:-587}"
+            ENV_VARS="${ENV_VARS},EMAIL_MODE=smtp,SMTP_HOST=${{ secrets.SMTP_HOST }},SMTP_PORT=${SMTP_PORT},SMTP_USERNAME=${{ secrets.SMTP_USERNAME }},SMTP_PASSWORD=${{ secrets.SMTP_PASSWORD }}"
           fi
 
           gcloud run deploy "$SERVICE_NAME" \
