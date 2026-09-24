@@ -20,8 +20,7 @@ name: Cloud Run Working Hours Schedule (Auto Start / Stop)
 
 on:
   schedule:
-    - cron: '14 3 * * 1-5'
-    - cron: '44 12 * * 1-5'
+    - cron: '28 4 * * *'
 
   workflow_dispatch:
     inputs:
